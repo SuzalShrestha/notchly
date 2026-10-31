@@ -99,10 +99,26 @@ struct SettingsRootView: View {
 private struct GeneralPane: View {
     @State private var loginStatus = SMAppService.mainApp.status
     @State private var loginError: String?
+    @AppStorage("dismissedWelcomeCard") private var dismissedWelcome = false
 
     var body: some View {
         let s = Settings.general
         SettingsPane(title: "General") {
+            if !dismissedWelcome {
+                SettingsCard {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "hand.wave.fill").font(.system(size: 20)).foregroundStyle(.orange)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Welcome to Notchly").font(.headline)
+                            Text("Point at the notch at the top of your screen to open it, or press ⌃⌘1 to ⌃⌘7 to jump to a tab. Notchly lives in the menu bar; open it again from Applications to come back here. To follow Claude Code sessions, see Agents & AI Usage.")
+                                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 8)
+                        Button("Got It") { withAnimation { dismissedWelcome = true } }
+                    }
+                    .padding(.vertical, 10)
+                }
+            }
             SettingsCard(title: "Behavior") {
                 SettingsRow(title: "Launch at login", subtitle: loginSubtitle) {
                     HStack {

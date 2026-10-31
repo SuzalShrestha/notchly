@@ -39,6 +39,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotchManager.shared.start()
         setUpStatusItem()
         updateHotKeys()
+        // First launch: an agent app has no Dock icon or window, so show Settings with the welcome card.
+        if !UserDefaults.standard.bool(forKey: "didShowWelcome") {
+            UserDefaults.standard.set(true, forKey: "didShowWelcome")
+            showSettings()
+        }
         // Escape in a notch text field ends editing; a second Escape closes the open notch.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard event.keyCode == UInt16(kVK_Escape) else { return event }
