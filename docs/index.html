@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notchly — the notch, put to work</title>
+<meta name="description" content="Notchly turns the MacBook notch into a small panel for music, files, calendar, clipboard and coding agents. Free and open source.">
+<meta property="og:title" content="Notchly">
+<meta property="og:description" content="The MacBook notch, put to work. Free and open source.">
+<meta property="og:image" content="img/open-nook.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2312061f'/%3E%3Cpath d='M4 8h24v4a6 6 0 0 1-6 6H10a6 6 0 0 1-6-6z' fill='%23000' stroke='%23c9a8ff' stroke-width='1.5'/%3E%3C/svg%3E">
+<style>
+:root {
+  color-scheme: dark;
+  --night: #12061f;
+  --deep: #0b0420;
+  --surface: #1c1029;
+  --lavender: #c9a8ff;
+  --pink: #ff8fcf;
+  --glow: #ff5fd2;
+  --highlight: #ffd6f6;
+  --ink: #2a0f6b;
+  --text: #fff;
+  --text-2: rgba(255,255,255,.72);
+  --text-3: rgba(255,255,255,.5);
+  --hair: rgba(255,255,255,.1);
+  --card: #1d1d1f;
+  --orange: #ff9e0a;
+  --blue: #0a84ff;
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
+  --display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", system-ui, sans-serif;
+  --rounded: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html { background: var(--night); }
+body { margin: 0; background: var(--night); color: var(--text); font: 400 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+body::after { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .06; mix-blend-mode: overlay;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--pink); outline-offset: 3px; border-radius: 6px; }
+.wrap { width: min(1080px, 100% - 32px); margin-inline: auto; }
+
+/* Header: a small notch of its own */
+.bar { position: sticky; top: 0; z-index: 20; display: flex; justify-content: center; pointer-events: none; }
+.bar nav { pointer-events: auto; position: relative; display: flex; align-items: center; gap: 22px; height: 46px; padding: 0 22px 2px;
+  font-size: 13.5px; color: var(--text-2); }
+#barShape { position: absolute; inset: 0 auto auto 50%; transform: translateX(-50%); z-index: -1; overflow: visible; }
+.bar nav a { text-decoration: none; }
+.bar nav a:hover { color: #fff; }
+.bar .brand { color: #fff; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.bar .get { color: var(--ink); background: #fff; font-weight: 600; font-size: 12.5px; padding: 5px 12px; border-radius: 99px; }
+.bar .get:hover { color: var(--ink); }
+@media (max-width: 560px) { .bar .hide-sm { display: none; } }
+
+/* Hero */
+.hero { text-align: center; padding: 64px 0 0; }
+h1 { font: 600 clamp(44px, 7.4vw, 78px)/1.02 var(--display); letter-spacing: -.035em; margin: 0 auto; max-width: 13ch; text-wrap: balance; }
+.lede { font-size: 17px; color: var(--text-2); max-width: 34em; margin: 22px auto 0; text-wrap: pretty; }
+.ctas { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 30px; }
+.btn { display: inline-flex; align-items: center; gap: 9px; height: 46px; padding: 0 20px; border-radius: 14px; font: 600 15px var(--sans); text-decoration: none; transition: transform .15s cubic-bezier(.4,0,.2,1); }
+.btn:active { transform: scale(.97); }
+.btn.primary { background: #fff; color: var(--ink); box-shadow: 0 10px 30px -8px rgba(30,0,80,.6); }
+.btn.ghost { background: rgba(255,255,255,.07); box-shadow: inset 0 0 0 1px var(--hair); }
+.btn.ghost:hover { background: rgba(255,255,255,.11); }
+.req { font-size: 13px; color: var(--text-3); margin-top: 14px; }
+
+/* The stage: a MacBook screen with a live notch */
+.stage-fit { margin: 56px auto 0; width: min(1000px, 100%); }
+.stage { position: relative; width: 1000px; height: 560px; transform-origin: top left; border-radius: 22px 22px 0 0;
+  background: #000; padding: 12px 12px 0; box-shadow: 0 0 0 2px #0b0420, 0 30px 80px -20px rgba(10,0,40,.9), 0 0 60px -10px rgba(255,158,232,.35); }
+.screen { position: relative; height: 100%; border-radius: 12px 12px 0 0; overflow: hidden;
+  background: linear-gradient(180deg, #090214 0%, #1a0640 20%, #330c68 34%, #8530bd 45%, #d68ad6 50%, #6f27c4 55%, #300c7a 68%, #160540 100%); }
+.screen::before { content: ""; position: absolute; left: -10%; right: -10%; top: 49%; height: 51%;
+  background: repeating-linear-gradient(180deg, rgba(255,214,246,.18) 0 1px, transparent 1px 9px); mask: linear-gradient(180deg, #000, transparent 85%); }
+.sun { position: absolute; left: 50%; top: 31%; width: 230px; height: 230px; margin-left: -115px; border-radius: 50%;
+  background: linear-gradient(180deg, #ffe8be, #ff8fcf 60%, #b44dff); mask: linear-gradient(180deg, #000 0 72%, transparent 72%); opacity: .9; filter: blur(.3px); }
+.menubar { position: absolute; inset: 0 0 auto; height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px;
+  font: 600 13px var(--sans); color: rgba(255,255,255,.9); background: rgba(201,168,255,.16); backdrop-filter: blur(12px); }
+.menubar span + span { margin-left: 18px; font-weight: 400; }
+.menubar .right { display: flex; gap: 14px; font-weight: 500; }
+.hint { position: absolute; left: 50%; top: 66px; transform: translateX(-50%); font: 500 13px var(--sans); color: rgba(255,255,255,.75);
+  display: flex; align-items: center; gap: 8px; transition: opacity .3s; white-space: nowrap; }
+.hint i { width: 6px; height: 6px; border-radius: 50%; background: var(--highlight); box-shadow: 0 0 10px var(--highlight); animation: ping 1.8s infinite; }
+@keyframes ping { 50% { opacity: .3; } }
+.stage.opened .hint { opacity: 0; }
+
+/* Notch */
+.notch { position: absolute; left: 50%; top: 0; z-index: 5; cursor: default; outline: none; }
+#shape { position: absolute; top: 0; overflow: visible; display: block; }
+#shape path { fill: #000; }
+.ncontent { position: absolute; top: 0; overflow: hidden; color: #fff; font-family: var(--rounded); }
+.wing { position: absolute; top: 0; height: 32px; display: flex; align-items: center; transition: opacity .2s; }
+.wing.l { left: 10px; } .wing.r { right: 12px; }
+.art { width: 20px; height: 20px; border-radius: 5px; background: linear-gradient(135deg, #ff8fcf, #6f27c4 70%); }
+.eq { display: flex; gap: 2px; align-items: center; height: 14px; }
+.eq b { width: 3px; height: 100%; border-radius: 2px; background: var(--pink); animation: eq .9s ease-in-out infinite alternate; transform-origin: center; }
+.eq b:nth-child(2) { animation-delay: -.3s } .eq b:nth-child(3) { animation-delay: -.6s } .eq b:nth-child(4) { animation-delay: -.15s }
+@keyframes eq { from { transform: scaleY(.3) } to { transform: scaleY(1) } }
+.open { position: absolute; inset: 0; padding: 0 12px 12px; opacity: 0; pointer-events: none; transition: opacity .18s; }
+.stage.opened .open { opacity: 1; pointer-events: auto; transition-delay: .08s; }
+.stage.opened .wing { opacity: 0; }
+.top { height: 38px; display: flex; align-items: center; justify-content: space-between; }
+.dock { display: flex; gap: 2px; padding: 3px; border-radius: 99px; background: #161617; }
+.dock button { all: unset; width: 30px; height: 24px; border-radius: 99px; display: grid; place-items: center; color: rgba(255,255,255,.75); cursor: pointer; }
+.dock button:hover { color: #fff; }
+.dock button[aria-selected="true"] { background: #353537; color: #fff; }
+.dock svg, .ico { width: 15px; height: 15px; fill: currentColor; }
+.status { display: flex; align-items: center; gap: 10px; font: 600 12px var(--rounded); color: rgba(255,255,255,.8); }
+.batt { width: 22px; height: 11px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.5); padding: 2px; }
+.batt i { display: block; height: 100%; width: 70%; border-radius: 1px; background: #fff; }
+.panel { display: none; height: calc(100% - 38px); }
+.panel.on { display: flex; gap: 10px; animation: in .25s ease-out; }
+@keyframes in { from { opacity: 0; transform: translateY(-4px) } }
+.w { background: var(--card); border-radius: 18px; padding: 12px 14px; min-width: 0; }
+.w .t { font-weight: 700; font-size: 13px; }
+.w .s { font-size: 11.5px; color: rgba(255,255,255,.55); font-weight: 600; }
+.round { all: unset; width: 26px; height: 26px; border-radius: 50%; background: #2c2c2e; display: inline-grid; place-items: center; cursor: pointer; }
+.round.big { width: 32px; height: 32px; background: #fff; color: #000; }
+.chip { all: unset; font: 600 11.5px var(--rounded); padding: 4px 10px; border-radius: 99px; background: #2a2a2c; color: rgba(255,255,255,.85); cursor: pointer; white-space: nowrap; }
+.chip.on { background: #fff; color: #000; }
+.bar-track { height: 4px; border-radius: 2px; background: #3a3a3c; overflow: hidden; }
+.bar-track i { display: block; height: 100%; width: 38%; background: #fff; border-radius: 2px; animation: prog 60s linear infinite; }
+@keyframes prog { to { width: 100% } }
+.ticks { display: flex; justify-content: space-between; height: 22px; align-items: end; }
+.ticks i { width: 2px; height: 12px; background: rgba(255,158,10,.5); border-radius: 1px; }
+.ticks i:nth-child(5n+1) { height: 20px; background: var(--orange); }
+.big-num { font: 700 34px/1 var(--rounded); color: var(--orange); font-variant-numeric: tabular-nums; }
+.days { display: flex; justify-content: space-between; text-align: center; font-weight: 700; font-size: 17px; }
+.days small { display: block; font-size: 10px; color: rgba(255,255,255,.5); }
+.days .today { color: var(--blue); }
+.ev { display: flex; gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.06); font-size: 12.5px; font-weight: 600; }
+.ev:last-child { border: 0; }
+.ev i { width: 3px; align-self: stretch; border-radius: 2px; background: var(--c); }
+.ev .s { margin-left: auto; }
+.drop { flex: 1; border-radius: 18px; border: 1.5px dashed rgba(255,255,255,.18); display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 10px; transition: background .2s, border-color .2s; }
+.drop.hot { background: rgba(10,132,255,.12); border-color: rgba(10,132,255,.85); }
+.file { width: 74px; text-align: center; font-size: 10.5px; font-weight: 600; color: rgba(255,255,255,.8); }
+.file b { display: block; width: 42px; height: 52px; margin: 0 auto 5px; border-radius: 6px; background: linear-gradient(160deg, #fff, #d8d8e0); position: relative; }
+.file b::after { content: attr(data-ext); position: absolute; bottom: 6px; left: 0; right: 0; font-size: 8.5px; color: var(--ink); }
+.file span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clips { display: flex; gap: 10px; overflow: hidden; }
+.clip { flex: 0 0 150px; height: 108px; padding: 10px 12px; font-size: 11.5px; font-weight: 600; line-height: 1.35; color: rgba(255,255,255,.85); overflow: hidden; }
+.clip .s { display: block; margin-bottom: 6px; }
+.swatch { height: 46px; border-radius: 10px; background: #ff8fcf; margin-bottom: 6px; }
+.prompt { flex: 1; position: relative; overflow: hidden; text-align: center; mask: linear-gradient(180deg, transparent, #000 18%, #000 70%, transparent); }
+.prompt p { margin: 0; font: 700 22px/1.35 var(--rounded); padding: 30px 60px; }
+.prompt.play p { animation: scroll 22s linear infinite; }
+@keyframes scroll { to { transform: translateY(-70%) } }
+.agent { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.step { display: flex; gap: 8px; align-items: center; font-size: 12px; font-weight: 600; color: rgba(255,255,255,.8); }
+.step .dot { width: 8px; height: 8px; border-radius: 50%; background: #30d158; }
+.step.run .dot { background: var(--orange); animation: ping 1s infinite; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: rgba(255,255,255,.55); }
+
+/* Sections */
+section { padding: 120px 0 0; }
+h2 { font: 600 clamp(36px, 5vw, 52px)/1.05 var(--display); letter-spacing: -.035em; margin: 0; max-width: 16ch; text-wrap: balance; }
+.sub { color: var(--text-2); font-size: 17px; max-width: 36em; margin: 16px 0 0; }
+.shots { display: grid; gap: 18px; margin-top: 44px; }
+.shots figure { margin: 0; }
+.shots img { width: 100%; display: block; border-radius: 22px; background: var(--deep); box-shadow: 0 0 0 1px var(--hair), 0 30px 80px -30px rgba(10,0,40,.9); }
+.shots figcaption { color: var(--text-3); font-size: 14px; margin-top: 10px; }
+.features { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 64px; margin-top: 48px; }
+.features div { padding: 22px 0; border-top: 1px solid var(--hair); }
+.features h3 { font: 600 19px/1.3 var(--display); letter-spacing: -.015em; margin: 0 0 6px; display: flex; align-items: center; gap: 10px; }
+.features h3 svg { width: 17px; height: 17px; fill: var(--lavender); flex: none; }
+.features p { margin: 0; color: var(--text-2); font-size: 15px; }
+@media (max-width: 720px) { .features { grid-template-columns: 1fr; } }
+.steps { list-style: none; counter-reset: s; padding: 0; margin: 44px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.steps li { counter-increment: s; padding: 26px; border-radius: 26px; background: rgba(255,255,255,.045); box-shadow: inset 0 0 0 1px var(--hair); color: var(--text-2); font-size: 15px; }
+.steps li::before { content: counter(s); display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; margin-bottom: 18px;
+  background: rgba(255,95,210,.18); color: var(--pink); font-weight: 700; box-shadow: 0 0 12px rgba(255,95,210,.35); }
+.steps b { color: #fff; display: block; font: 600 17px var(--display); margin-bottom: 4px; }
+@media (max-width: 820px) { .steps { grid-template-columns: 1fr; } }
+code, pre { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.steps code { font-size: 12.5px; background: rgba(0,0,0,.35); padding: 2px 6px; border-radius: 6px; color: var(--highlight); }
+.source { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+@media (max-width: 820px) { .source { grid-template-columns: 1fr; } }
+pre { margin: 0; padding: 22px 24px; border-radius: 22px; background: var(--deep); box-shadow: inset 0 0 0 1px var(--hair); font-size: 13.5px; line-height: 1.8; overflow-x: auto; color: var(--text-2); }
+pre .c { color: var(--text-3); }
+pre .p { color: var(--lavender); user-select: none; }
+.list { margin: 22px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; font-size: 15px; color: var(--text-2); }
+.list li { display: flex; gap: 10px; }
+.list li::before { content: ""; flex: none; width: 18px; height: 18px; margin-top: 3px; border-radius: 50%; background: rgba(255,95,210,.18) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18'%3E%3Cpath d='M5 9.5l2.5 2.5L13 6.5' fill='none' stroke='%23ff8fcf' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"); }
+footer { margin-top: 140px; position: relative; overflow: hidden; padding-bottom: 28px; }
+footer::before { content: ""; position: absolute; top: 0; left: 50%; width: min(1080px, 90%); height: 1px; transform: translateX(-50%); background: linear-gradient(90deg, transparent, rgba(255,214,246,.4), transparent); }
+.word { font: 700 19vw/.9 var(--display); letter-spacing: -.05em; text-align: center; margin: 40px 0 0;
+  background: linear-gradient(180deg, rgba(255,214,246,.16), rgba(255,214,246,0) 80%); -webkit-background-clip: text; background-clip: text; color: transparent; user-select: none; }
+.foot { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-3); }
+.foot a { color: var(--text-2); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-nook" viewBox="0 0 16 16"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.6"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1.6"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1.6"/><rect x="9" y="9" width="5.5" height="5.5" rx="1.6"/></symbol>
+  <symbol id="i-music" viewBox="0 0 16 16"><path d="M6 3.2 13 1.6v9.2a2.3 2.3 0 1 1-1.4-2.1V4.4L7.4 5.4v7a2.3 2.3 0 1 1-1.4-2.1z"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 16 16"><path d="M3.5 2.5h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2zm-.5 4v6a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5v-6z"/><rect x="4" y="8" width="2" height="1.6" rx=".4"/><rect x="7" y="8" width="2" height="1.6" rx=".4"/><rect x="10" y="8" width="2" height="1.6" rx=".4"/><rect x="4" y="10.6" width="2" height="1.6" rx=".4"/><rect x="7" y="10.6" width="2" height="1.6" rx=".4"/></symbol>
+  <symbol id="i-tray" viewBox="0 0 16 16"><path d="M3.6 2.5h8.8l2.6 6.2v3.8a1.5 1.5 0 0 1-1.5 1.5H2.5A1.5 1.5 0 0 1 1 12.5V8.7zm.8 1.4L2.6 8.2h3.2a2.2 2.2 0 0 0 4.4 0h3.2l-1.8-4.3z"/></symbol>
+  <symbol id="i-prompt" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="1.6" rx=".8"/><rect x="1.5" y="6" width="10" height="1.6" rx=".8"/><rect x="1.5" y="9.5" width="13" height="1.6" rx=".8"/><rect x="1.5" y="13" width="8" height="1.6" rx=".8"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 16 16"><path d="M5.5 1h6l3 3v7.5a1.5 1.5 0 0 1-1.5 1.5H5.5A1.5 1.5 0 0 1 4 11.5v-9A1.5 1.5 0 0 1 5.5 1z"/><path d="M2.5 4v9.5A1.5 1.5 0 0 0 4 15h7" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+  <symbol id="i-agent" viewBox="0 0 16 16"><path d="M7 1.5c.5 3.2 1.8 4.5 5 5-3.2.5-4.5 1.8-5 5-.5-3.2-1.8-4.5-5-5 3.2-.5 4.5-1.8 5-5zM12.5 9.5c.3 1.6.9 2.2 2.5 2.5-1.6.3-2.2.9-2.5 2.5-.3-1.6-.9-2.2-2.5-2.5 1.6-.3 2.2-.9 2.5-2.5z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 16 16"><path d="M6.8 1h2.4l.4 2 1.3.7 1.9-.8 1.2 2.1-1.5 1.3v1.4l1.5 1.3-1.2 2.1-1.9-.8-1.3.7-.4 2H6.8l-.4-2-1.3-.7-1.9.8L2 9.1l1.5-1.3V6.4L2 5.1l1.2-2.1 1.9.8 1.3-.7zM8 5.6a2.4 2.4 0 1 0 0 4.8 2.4 2.4 0 0 0 0-4.8z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 16 16"><path d="M4.5 2.6v10.8L13.5 8z"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 16 16"><path d="M8 3v10L1.5 8zm6.5 0v10L8 8z"/></symbol>
+  <symbol id="i-next" viewBox="0 0 16 16"><path d="M8 3v10l6.5-5zM1.5 3v10L8 8z"/></symbol>
+</svg>
+
+<header class="bar">
+  <nav aria-label="Main">
+    <svg id="barShape" aria-hidden="true"><path fill="#000"/></svg>
+    <a class="brand" href="#top"><svg width="18" height="18" viewBox="0 0 32 32" aria-hidden="true"><path d="M3 8h26v4a7 7 0 0 1-7 7H10a7 7 0 0 1-7-7z" fill="none" stroke="#c9a8ff" stroke-width="2.5"/></svg>Notchly</a>
+    <a class="hide-sm" href="#features">Features</a>
+    <a class="hide-sm" href="#install">Install</a>
+    <a href="https://github.com/SuzalShrestha/notchly">GitHub</a>
+    <a class="get" href="https://github.com/SuzalShrestha/notchly/releases/latest/download/Notchly.zip">Download</a>
+  </nav>
+</header>
+
+<main id="top">
+  <div class="hero wrap">
+    <h1>Your notch, put to work.</h1>
+    <p class="lede">Notchly turns the black notch on your MacBook into a small panel for music, files, your calendar, clipboard history and coding agents. Point at it and it opens. Move away and it goes back.</p>
+    <div class="ctas">
+      <a class="btn primary" href="https://github.com/SuzalShrestha/notchly/releases/latest/download/Notchly.zip">
+        <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M7.2 1.5h1.6v8l2.7-2.7 1.1 1.1L8 12.5 3.4 7.9l1.1-1.1 2.7 2.7zM2 13h12v1.5H2z"/></svg>Download for Mac</a>
+      <a class="btn ghost" href="https://github.com/SuzalShrestha/notchly">
+        <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 .2a8 8 0 0 0-2.5 15.6c.4 0 .5-.2.5-.4v-1.5c-2.2.5-2.7-1-2.7-1-.4-.9-.9-1.2-.9-1.2-.7-.5.1-.5.1-.5.8.1 1.2.8 1.2.8.7 1.3 1.9.9 2.3.7.1-.5.3-.9.5-1.1-1.8-.2-3.6-.9-3.6-4 0-.9.3-1.6.8-2.1-.1-.2-.4-1 .1-2.1 0 0 .7-.2 2.2.8a7.4 7.4 0 0 1 4 0c1.5-1 2.2-.8 2.2-.8.4 1.1.2 1.9.1 2.1.5.6.8 1.3.8 2.1 0 3.1-1.9 3.7-3.6 3.9.3.3.5.8.5 1.5v2.2c0 .2.1.5.6.4A8 8 0 0 0 8 .2z"/></svg>Read the source</a>
+    </div>
+    <p class="req">Free and MIT-licensed. Needs macOS 14 or later on an Apple silicon Mac.</p>
+
+    <div class="stage-fit" id="fit">
+      <div class="stage" id="stage">
+        <div class="screen">
+          <div class="sun"></div>
+          <div class="menubar" aria-hidden="true"><div><span>Finder</span><span>File</span><span>Edit</span><span>View</span></div><div class="right"><span id="clock"></span></div></div>
+          <div class="hint" aria-hidden="true"><i></i>Point at the notch, or drop a file on it</div>
+        </div>
+        <div class="notch" id="notch" tabindex="0" role="button" aria-expanded="false" aria-label="Notch demo. Press Enter to open.">
+          <svg id="shape" aria-hidden="true"><path/></svg>
+          <div class="ncontent" id="content">
+            <div class="wing l"><div class="art"></div></div>
+            <div class="wing r"><div class="eq"><b></b><b></b><b></b><b></b></div></div>
+            <div class="open">
+              <div class="top">
+                <div class="dock" role="tablist" aria-label="Notch tabs" id="dock"></div>
+                <div class="status"><span id="pct">72%</span><span class="batt"><i></i></span><svg class="ico" style="width:16px;height:16px"><use href="#i-gear"/></svg></div>
+              </div>
+
+              <div class="panel" data-tab="nook">
+                <div class="w" style="flex:1.25;display:flex;gap:12px;align-items:center">
+                  <div class="art" style="width:76px;height:76px;border-radius:12px;flex:none"></div>
+                  <div style="min-width:0;flex:1"><div class="t">Low Tide Radio</div><div class="s">Harbor Lights</div>
+                    <div style="display:flex;gap:8px;margin-top:12px"><span class="round"><svg class="ico" style="width:11px"><use href="#i-prev"/></svg></span><span class="round big"><svg class="ico" style="width:12px"><use href="#i-play"/></svg></span><span class="round"><svg class="ico" style="width:11px"><use href="#i-next"/></svg></span></div></div>
+                </div>
+                <div class="w" style="flex:1"><div style="display:flex;align-items:baseline;gap:8px"><span class="big-num" style="color:var(--blue);font-size:28px" id="dnum">31</span><span class="t" id="dname">Saturday</span></div>
+                  <div class="ev" style="--c:var(--pink)"><i></i>Design review<span class="s">14:00</span></div><div class="ev" style="--c:var(--lavender)"><i></i>Gym<span class="s">18:30</span></div></div>
+                <div class="w" style="flex:1;display:flex;flex-direction:column;justify-content:space-between">
+                  <div style="display:flex;gap:6px;justify-content:center"><span class="chip" style="background:rgba(255,158,10,.25);color:var(--orange)">Focus</span><span class="chip">Break</span></div>
+                  <div class="ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                  <div class="big-num" style="text-align:right" id="timer">25:00</div>
+                </div>
+                <div class="w" style="flex:.8"><div class="s">My Location</div><div style="font:600 34px/1.1 var(--rounded)">19°</div><div class="s">H:24° L:16°</div><div class="s" style="margin-top:10px">Clear tonight</div></div>
+              </div>
+
+              <div class="panel" data-tab="music">
+                <div class="art" style="width:130px;height:130px;border-radius:16px;flex:none"></div>
+                <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:8px;padding:0 6px">
+                  <div><div class="t" style="font-size:17px">Low Tide Radio</div><div class="s" style="font-size:13px">Harbor Lights</div></div>
+                  <div class="bar-track"><i></i></div>
+                  <div style="display:flex;gap:10px;justify-content:center"><span class="round"><svg class="ico" style="width:11px"><use href="#i-prev"/></svg></span><span class="round big"><svg class="ico" style="width:12px"><use href="#i-play"/></svg></span><span class="round"><svg class="ico" style="width:11px"><use href="#i-next"/></svg></span></div>
+                </div>
+                <div class="w" style="width:220px;display:flex;flex-direction:column;justify-content:center;gap:6px;font-weight:700;font-size:14px">
+                  <span style="color:rgba(255,255,255,.35)">the tide goes out slow</span><span>and the radio hums along</span><span style="color:rgba(255,255,255,.35)">we leave the lights on</span>
+                </div>
+              </div>
+
+              <div class="panel" data-tab="calendar">
+                <div class="w" style="width:260px;flex:none;display:flex;flex-direction:column;gap:12px"><div class="t" style="font-size:15px" id="month">October 2026</div><div class="days" id="days"></div><div class="s" style="margin-top:auto">2 events today</div></div>
+                <div class="w" style="flex:1">
+                  <div class="ev" style="--c:var(--blue)"><i></i>Standup<span class="s">09:30</span></div>
+                  <div class="ev" style="--c:var(--pink)"><i></i>Design review<span class="chip" style="background:var(--blue);color:#fff;padding:2px 9px">Join</span><span class="s" style="margin-left:0">14:00</span></div>
+                  <div class="ev" style="--c:var(--lavender)"><i></i>Gym<span class="s">18:30</span></div>
+                </div>
+              </div>
+
+              <div class="panel" data-tab="tray">
+                <div class="drop" id="drop">
+                  <div class="file"><b data-ext="PDF"></b><span>Invoice-Oct.pdf</span></div>
+                  <div class="file"><b data-ext="PNG"></b><span>Mockup v3.png</span></div>
+                  <div class="file"><b data-ext="ZIP"></b><span>Assets.zip</span></div>
+                </div>
+              </div>
+
+              <div class="panel" data-tab="clipboard" style="flex-direction:column">
+                <div style="display:flex;gap:6px"><span class="chip on">All</span><span class="chip">Text</span><span class="chip">Link</span><span class="chip">Color</span><span class="chip">Image</span><span class="chip">File</span></div>
+                <div class="clips">
+                  <div class="w clip"><span class="s">Text, 2 min ago</span>Meeting moved to 3pm, same room.</div>
+                  <div class="w clip"><span class="s">Link</span>github.com/SuzalShrestha/notchly</div>
+                  <div class="w clip"><span class="s">Color</span><div class="swatch"></div>#FF8FCF</div>
+                  <div class="w clip"><span class="s">Text, 1 h ago</span>Remember to water the plants on Friday.</div>
+                  <div class="w clip"><span class="s">Color</span><div class="swatch" style="background:#c9a8ff"></div>#C9A8FF</div>
+                </div>
+              </div>
+
+              <div class="panel" data-tab="prompter" style="gap:12px">
+                <div class="prompt" id="prompt"><p>This is your teleprompter. It sits right under the camera, so you read while you look at the people you talk to. Press play: the text scrolls up at a steady speed. Change the speed at any time, and pause when you need a breath. Your scripts stay on your Mac.</p></div>
+                <div style="display:flex;flex-direction:column;justify-content:end"><button class="round big" id="playPrompt" aria-label="Play script"><svg class="ico" style="width:12px"><use href="#i-play"/></svg></button></div>
+              </div>
+
+              <div class="panel" data-tab="agents">
+                <div class="w agent"><div style="display:flex;justify-content:space-between"><span class="t">Claude Code</span><span class="mono">~/website</span></div>
+                  <div class="step"><span class="dot"></span>Read index.html</div>
+                  <div class="step"><span class="dot"></span>Edited styles.css</div>
+                  <div class="step run"><span class="dot"></span>Running npm test</div>
+                </div>
+                <div class="w agent"><div style="display:flex;justify-content:space-between"><span class="t">Claude Code</span><span class="mono">~/api</span></div>
+                  <div class="step"><span class="dot" style="background:var(--pink)"></span>Needs your answer</div>
+                  <div class="s">Allow the agent to run the migration?</div>
+                  <div class="s" style="margin-top:auto">Open the terminal to reply</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section class="wrap" id="features">
+    <h2>Seven tabs, one gesture.</h2>
+    <p class="sub">Everything lives behind the camera. Each tab is one keyboard shortcut away: Control-Command and a number from 1 to 7.</p>
+    <div class="features">
+      <div><h3><svg><use href="#i-nook"/></svg>Nook</h3><p>A row of widgets you choose: now playing, calendar, focus timer, weather, to-dos, notes, volume, quick apps, a mirror and more. Reorder them in Settings.</p></div>
+      <div><h3><svg><use href="#i-music"/></svg>Music</h3><p>Artwork, a scrubber, playback controls and synced lyrics for Spotify and Apple Music. While a song plays, the closed notch shows the cover and a small equalizer.</p></div>
+      <div><h3><svg><use href="#i-cal"/></svg>Calendar</h3><p>A day strip and your agenda, with a Join button for video calls. A reminder appears in the notch before a meeting starts.</p></div>
+      <div><h3><svg><use href="#i-tray"/></svg>Tray</h3><p>Drag a file to the top of the screen and drop it in the notch. It stays there until you drag it out, AirDrop it or remove it.</p></div>
+      <div><h3><svg><use href="#i-clip"/></svg>Clipboard</h3><p>Everything you copy: text, links, colors, images and files. Search it, filter it, and pin favorites. Passwords and the apps you exclude are never saved.</p></div>
+      <div><h3><svg><use href="#i-prompt"/></svg>Prompter</h3><p>A teleprompter under the camera. Paste a script, press play, and read while you keep eye contact.</p></div>
+      <div><h3><svg><use href="#i-agent"/></svg>Agents</h3><p>See what Claude Code is doing in each project: the current step, and an alert in the notch when it needs you.</p></div>
+      <div><h3><svg><use href="#i-gear"/></svg>Live activities</h3><p>When the notch is closed it still shows what matters: the song, a running timer, battery charging, an agent at work, or a volume change.</p></div>
+    </div>
+    <div class="shots">
+      <figure><img src="img/open-nook.png" alt="The open notch showing the Nook tab: media, calendar, focus timer and weather widgets." loading="lazy" width="1800" height="484"><figcaption>The Nook tab as the app draws it on first launch, before you allow calendar access or play a song.</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="wrap" id="install">
+    <h2>Install in a minute.</h2>
+    <p class="sub">Notchly is not notarized by Apple yet, so macOS asks once before the first launch.</p>
+    <ol class="steps">
+      <li><b>Download</b>Get <code>Notchly.zip</code> from the latest release and unzip it.</li>
+      <li><b>Move it</b>Drag <code>Notchly.app</code> to your Applications folder.</li>
+      <li><b>Allow it once</b>Open the app. When macOS blocks it, go to System Settings, Privacy &amp; Security, and click Open Anyway. Or run <code>xattr -dr com.apple.quarantine /Applications/Notchly.app</code>.</li>
+    </ol>
+  </section>
+
+  <section class="wrap" id="source">
+    <div class="source">
+      <div>
+        <h2>Open source, end to end.</h2>
+        <p class="sub">Notchly is plain Swift with SwiftUI and AppKit. It has no accounts, no analytics and no third-party packages.</p>
+        <ul class="list">
+          <li>MIT license: use it, change it, ship your own version.</li>
+          <li>Your data stays on your Mac, in Application Support.</li>
+          <li>The only network calls are weather (Open-Meteo) and lyrics (LRCLIB).</li>
+        </ul>
+      </div>
+      <pre><span class="c"># build from source</span>
+<span class="p">$ </span>git clone https://github.com/SuzalShrestha/notchly
+<span class="p">$ </span>cd notchly
+<span class="p">$ </span>./make-app.sh --run
+<span class="c"># self-tests and snapshots</span>
+<span class="p">$ </span>./verify.sh</pre>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="word" aria-hidden="true">Notchly</div>
+  <div class="wrap foot">
+    <span>Notchly is an independent project. It is not affiliated with NotchNook or lo.cafe.</span>
+    <span><a href="https://github.com/SuzalShrestha/notchly">GitHub</a>&ensp;<a href="https://github.com/SuzalShrestha/notchly/releases">Releases</a>&ensp;<a href="https://github.com/SuzalShrestha/notchly/blob/main/LICENSE">License</a></span>
+  </div>
+</footer>
+
+<script>
+// Notch outline: same geometry as NotchShape in the app.
+const lerp = (a, b, c, d, v) => c + (d - c) * Math.min(1, Math.max(0, (v - a) / (b - a)));
+const bottomRadius = h => lerp(32, 132, 11, 40, h);
+function earRadius(w, h) {
+  const e = lerp(200, 500, Math.max(0, Math.min(5, h - bottomRadius(h))), 24, Math.max(200, w));
+  return e + e / 24 * lerp(72, 152, 0, 6, h);
+}
+function notchPath(w, h) {
+  const a = Math.min(bottomRadius(h), h / 2, w / 2), n = earRadius(w, h), k = .62, X = x => (x + n).toFixed(2);
+  return `M${X(-n)},0 L${X(w + n)},0 C${X(w + n - k * n)},0 ${X(w)},${n - k * n} ${X(w)},${n} L${X(w)},${h - a}
+    C${X(w)},${h - a + k * a} ${X(w - a + k * a)},${h} ${X(w - a)},${h} L${X(a)},${h} C${X(a - k * a)},${h} ${X(0)},${h - a + k * a} ${X(0)},${h - a}
+    L${X(0)},${n} C${X(0)},${n - k * n} ${X(-n + k * n)},0 ${X(-n)},0 Z`;
+}
+function draw(svg, w, h) {
+  const n = earRadius(w, h);
+  svg.setAttribute('width', w + 2 * n); svg.setAttribute('height', h);
+  svg.style.left = -(w / 2 + n) + 'px';
+  svg.firstElementChild.setAttribute('d', notchPath(w, h));
+  return n;
+}
+
+// Header bar is a notch too.
+(function () {
+  const nav = document.querySelector('.bar nav'), svg = document.getElementById('barShape');
+  const fit = () => { draw(svg, nav.offsetWidth, nav.offsetHeight); svg.style.left = '50%'; svg.style.transform = 'translateX(-50%)'; };
+  fit(); addEventListener('resize', fit);
+})();
+
+// Tabs
+const tabs = [['nook', 'Nook', 156], ['music', 'Music', 156], ['calendar', 'Calendar', 170], ['tray', 'Tray', 150],
+              ['prompter', 'Prompter', 170], ['clipboard', 'Clipboard', 150], ['agents', 'Agents', 150]];
+const icons = { nook: 'i-nook', music: 'i-music', calendar: 'i-cal', tray: 'i-tray', prompter: 'i-prompt', clipboard: 'i-clip', agents: 'i-agent' };
+const dock = document.getElementById('dock');
+for (const [id, title] of tabs) {
+  const b = document.createElement('button');
+  b.role = 'tab'; b.dataset.tab = id; b.title = title; b.setAttribute('aria-label', title);
+  b.innerHTML = `<svg><use href="#${icons[id]}"/></svg>`;
+  b.onclick = e => { e.stopPropagation(); select(id); };
+  dock.appendChild(b);
+}
+
+// Spring state (response / damping fraction from the app: open .48/.88, close .40/.95)
+const stage = document.getElementById('stage'), notch = document.getElementById('notch'), shape = document.getElementById('shape'), content = document.getElementById('content');
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const CLOSED = { w: 190, h: 32 }, ACT = 50;  // wings add room when music plays
+let open = false, mode = 'nook', target = { w: CLOSED.w + 2 * ACT, h: 32 }, cur = { ...target }, vel = { w: 0, h: 0 }, spring = [.48, .88], last = 0;
+const openSize = () => ({ w: 760, h: 38 + tabs.find(t => t[0] === mode)[2] + 12 });
+
+function select(id) {
+  mode = id;
+  dock.querySelectorAll('button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === id));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('on', p.dataset.tab === id));
+  if (open) setTarget(openSize(), [.48, .88]);
+}
+function setTarget(t, s) { target = t; spring = s; if (!last) { last = performance.now(); requestAnimationFrame(tick); } }
+function setOpen(v, tab) {
+  if (tab) select(tab);
+  if (v === open) return;
+  open = v; stage.classList.toggle('opened', v); notch.setAttribute('aria-expanded', v);
+  setTarget(v ? openSize() : { w: CLOSED.w + 2 * ACT, h: 32 }, v ? [.48, .88] : [.4, .95]);
+}
+function tick(now) {
+  const dt = Math.min(.032, (now - last) / 1000); last = now;
+  const [resp, damp] = spring, k = (2 * Math.PI / resp) ** 2, c = 4 * Math.PI * damp / resp;
+  let moving = false;
+  for (const key of ['w', 'h']) {
+    if (reduce) { cur[key] = target[key]; continue; }
+    vel[key] += (-k * (cur[key] - target[key]) - c * vel[key]) * dt;
+    cur[key] += vel[key] * dt;
+    if (Math.abs(cur[key] - target[key]) > .1 || Math.abs(vel[key]) > .1) moving = true; else cur[key] = target[key];
+  }
+  render();
+  if (moving) requestAnimationFrame(tick); else last = 0;
+}
+function render() {
+  draw(shape, cur.w, cur.h);
+  Object.assign(content.style, { width: cur.w + 'px', height: cur.h + 'px', left: -cur.w / 2 + 'px' });
+}
+select('nook'); render();
+
+// Hover opens, leaving closes after 0.15 s, like the app.
+let closeTimer;
+notch.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') { clearTimeout(closeTimer); setOpen(true); } });
+notch.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') closeTimer = setTimeout(() => setOpen(false), 150); });
+notch.addEventListener('click', e => { if (e.pointerType !== 'mouse') setOpen(!open); });
+notch.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open); }
+  if (e.key === 'Escape') setOpen(false);
+  const i = tabs.findIndex(t => t[0] === mode);
+  if (open && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) select(tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length][0]);
+});
+document.addEventListener('click', e => { if (open && !notch.contains(e.target)) setOpen(false); });
+
+// Drop real files on the notch: it opens the Tray and lists them. Nothing is uploaded.
+const drop = document.getElementById('drop');
+addEventListener('dragover', e => { if ([...e.dataTransfer.types].includes('Files')) { e.preventDefault(); setOpen(true, 'tray'); drop.classList.add('hot'); } });
+addEventListener('dragleave', e => { if (!e.relatedTarget) drop.classList.remove('hot'); });
+addEventListener('drop', e => {
+  e.preventDefault(); drop.classList.remove('hot');
+  for (const f of e.dataTransfer.files) {
+    const d = document.createElement('div'); d.className = 'file';
+    const ext = (f.name.split('.').pop() || '').slice(0, 4).toUpperCase();
+    d.innerHTML = '<b></b><span></span>'; d.firstChild.dataset.ext = f.name.includes('.') ? ext : 'FILE'; d.lastChild.textContent = f.name;
+    drop.prepend(d);
+  }
+  while (drop.children.length > 7) drop.lastChild.remove();
+});
+
+// Prompter play / pause
+const prompt = document.getElementById('prompt'), playBtn = document.getElementById('playPrompt');
+playBtn.onclick = e => { e.stopPropagation(); const on = prompt.classList.toggle('play'); playBtn.setAttribute('aria-label', on ? 'Pause script' : 'Play script'); };
+
+// Real date, time and a ticking focus timer
+const now = new Date();
+document.getElementById('dnum').textContent = now.getDate();
+document.getElementById('dname').textContent = now.toLocaleDateString('en', { weekday: 'long' });
+document.getElementById('month').textContent = now.toLocaleDateString('en', { month: 'long', year: 'numeric' });
+document.getElementById('days').innerHTML = [-1, 0, 1, 2, 3, 4].map(o => {
+  const d = new Date(now); d.setDate(d.getDate() + o);
+  return `<span${o ? '' : ' class="today"'}><small>${d.toLocaleDateString('en', { weekday: 'narrow' })}</small>${d.getDate()}</span>`;
+}).join('');
+const clock = () => document.getElementById('clock').textContent = new Date().toLocaleString('en', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+clock(); setInterval(clock, 10000);
+let secs = 25 * 60;
+setInterval(() => { if (open && mode === 'nook') { secs = secs ? secs - 1 : 25 * 60; document.getElementById('timer').textContent = `${String(secs / 60 | 0).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`; } }, 1000);
+
+// Scale the 1000-px stage to fit narrow screens.
+const fitBox = document.getElementById('fit');
+function fit() { const s = Math.min(1, fitBox.clientWidth / 1000); stage.style.transform = `scale(${s})`; fitBox.style.height = 560 * s + 'px'; }
+fit(); addEventListener('resize', fit);
+</script>
+</body>
+</html>

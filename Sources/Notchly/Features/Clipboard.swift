@@ -1,0 +1,643 @@
+import CryptoKit
+import SwiftUI
+
+// Clipboard history (ClipboardStore / ClipboardItem / ClipboardSettings in the original) + the Notes widget.
+
+enum ClipboardRetention: String, Codable, CaseIterable {
+    case day, week, month, year, forever
+    var maxAge: TimeInterval? {
+        switch self {
+        case .day: 86_400
+        case .week: 7 * 86_400
+        case .month: 30 * 86_400
+        case .year: 365 * 86_400
+        case .forever: nil
+        }
+    }
+}
+
+enum ClipboardFilter: String, CaseIterable {
+    case all, favorites, text, link, color, image, file
+    var symbol: String? {
+        switch self {
+        case .all: nil
+        case .favorites: "star.fill"
+        case .text: "text.alignleft"
+        case .link: "link"
+        case .color: "paintpalette.fill"
+        case .image: "photo"
+        case .file: "doc"
+        }
+    }
+}
+
+// Default retention is not in research/settings-schema.json; `.month` is a guess.
+struct ClipboardSettings: Codable, Equatable {
+    var enabled = true
+    var retention: ClipboardRetention = .month
+    var historyLimit = 200
+    var skipConcealed = true
+    var excludedBundleIDs: [String] = []
+    var clearOnQuit = false
+}
+
+struct ClipboardItem: Codable, Identifiable, Equatable {
+    enum Kind: String, Codable { case text, link, color, image, file }
+    var id = UUID()
+    var rawType: Kind
+    var textContent: String?
+    var colorHex: String?
+    var assetPath: String?            // <id>.png under DataFile.folder/clipboard
+    var originalPaths: [String] = []
+    var sourceApplication: String?
+    var sourceBundleIdentifier: String?
+    var contentHash: String
+    var byteCount = 0
+    var copyCount = 1
+    var isFavorite = false
+    var capturedAt = Date()
+    var lastCopiedAt = Date()
+
+    var title: String {
+        switch rawType {
+        case .text, .link: textContent ?? ""
+        case .color: colorHex ?? ""
+        case .image: "Image"
+        case .file: originalPaths.map { URL(fileURLWithPath: $0).lastPathComponent }.joined(separator: ", ")
+        }
+    }
+
+    func matches(_ f: ClipboardFilter) -> Bool {
+        switch f {
+        case .all: true
+        case .favorites: isFavorite
+        case .text: rawType == .text
+        case .link: rawType == .link
+        case .color: rawType == .color
+        case .image: rawType == .image
+        case .file: rawType == .file
+        }
+    }
+}
+
+// MARK: - Pure logic (covered by selfTest)
+
+enum ClipboardParse {
+    /// "#RGB", "#RRGGBB" or "rgb(a)(r, g, b…)" → "#RRGGBB".
+    static func color(_ raw: String) -> String? {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if s.hasPrefix("#") {
+            var hex = String(s.dropFirst())
+            guard [3, 6].contains(hex.count), hex.allSatisfy(\.isHexDigit) else { return nil }
+            if hex.count == 3 { hex = hex.map { "\($0)\($0)" }.joined() }
+            return "#" + hex.uppercased()
+        }
+        guard s.hasPrefix("rgb(") || s.hasPrefix("rgba("), s.hasSuffix(")") else { return nil }
+        let inner = s.drop { $0 != "(" }.dropFirst().dropLast()
+        let parts = inner.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        guard (3...4).contains(parts.count) else { return nil }
+        let rgb = parts.prefix(3).compactMap { Int($0) }.filter { (0...255).contains($0) }
+        guard rgb.count == 3 else { return nil }
+        return "#" + rgb.map { String(format: "%02X", $0) }.joined()
+    }
+
+    /// Single http(s) URL with a host, no whitespace.
+    static func link(_ raw: String) -> URL? {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.contains(where: \.isWhitespace), let url = URL(string: s),
+              ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host?.isEmpty == false else { return nil }
+        return url
+    }
+
+    static func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+
+    /// Re-copying known content moves it to the top and bumps copyCount; new content goes first.
+    static func inserting(_ new: ClipboardItem, into items: [ClipboardItem]) -> [ClipboardItem] {
+        var items = items
+        guard let i = items.firstIndex(where: { $0.contentHash == new.contentHash }) else { return [new] + items }
+        var old = items.remove(at: i)
+        old.copyCount += 1
+        old.lastCopiedAt = new.capturedAt
+        old.sourceApplication = new.sourceApplication
+        old.sourceBundleIdentifier = new.sourceBundleIdentifier
+        return [old] + items
+    }
+
+    /// Drops non-favorites older than the retention window, then beyond `limit` non-favorites.
+    static func pruned(_ items: [ClipboardItem], retention: ClipboardRetention, limit: Int, now: Date = Date()) -> [ClipboardItem] {
+        let cutoff = retention.maxAge.map { now.addingTimeInterval(-$0) }
+        var kept = 0
+        return items.filter { item in
+            if item.isFavorite { return true }
+            if let cutoff, item.lastCopiedAt < cutoff { return false }
+            kept += 1
+            return kept <= limit
+        }
+    }
+}
+
+// MARK: - Store
+
+@MainActor @Observable
+final class ClipboardStore {
+    static let shared = ClipboardStore()
+    static let settings = Setting("clipboardSettings", default: ClipboardSettings())
+    static let assets = DataFile.folder.appendingPathComponent("clipboard", isDirectory: true)
+
+    private(set) var items: [ClipboardItem] = []
+    @ObservationIgnored private var lastChangeCount = NSPasteboard.general.changeCount
+    @ObservationIgnored private var timer: Timer?
+    @ObservationIgnored private let thumbs = NSCache<NSString, NSImage>()
+
+    private init() {
+        try? FileManager.default.createDirectory(at: Self.assets, withIntermediateDirectories: true)
+        items = DataFile.load("clipboard.json", as: [ClipboardItem].self) ?? []
+    }
+
+    func start() {
+        prune()
+        let t = Timer(timeInterval: 0.5, repeats: true) { _ in MainActor.assumeIsolated { ClipboardStore.shared.poll() } }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { if Self.settings.value.clearOnQuit { ClipboardStore.shared.clear() } }
+        }
+    }
+
+    private func poll() {
+        let pb = NSPasteboard.general
+        guard pb.changeCount != lastChangeCount else { return }
+        lastChangeCount = pb.changeCount
+        let s = Self.settings.value
+        guard s.enabled else { return }
+        let types = Set(pb.types ?? [])
+        if s.skipConcealed, !types.isDisjoint(with: [.init("org.nspasteboard.ConcealedType"), .init("org.nspasteboard.TransientType")]) { return }
+        let app = NSWorkspace.shared.frontmostApplication
+        if let id = app?.bundleIdentifier, s.excludedBundleIDs.contains(id) { return }
+        guard let (captured, png) = Self.capture(pb) else { return }
+        var item = captured
+        item.sourceApplication = app?.localizedName
+        item.sourceBundleIdentifier = app?.bundleIdentifier
+        if let png, !items.contains(where: { $0.contentHash == item.contentHash }) {
+            item.assetPath = "\(item.id.uuidString).png"
+            try? png.write(to: Self.assets.appendingPathComponent(item.assetPath!))
+        }
+        items = ClipboardParse.inserting(item, into: items)
+        prune()
+    }
+
+    /// Reads the pasteboard in priority order: files, text (link / color / plain), image (+ its PNG data).
+    static func capture(_ pb: NSPasteboard) -> (ClipboardItem, Data?)? {
+        if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
+            let paths = urls.map(\.path)
+            return (ClipboardItem(rawType: .file, originalPaths: paths,
+                                  contentHash: ClipboardParse.hash(Data(("file:" + paths.joined(separator: "\n")).utf8))), nil)
+        }
+        if let text = pb.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let hash = ClipboardParse.hash(Data(("text:" + text).utf8))
+            if let hex = ClipboardParse.color(text) {
+                return (ClipboardItem(rawType: .color, textContent: text, colorHex: hex, contentHash: hash, byteCount: text.utf8.count), nil)
+            }
+            let kind: ClipboardItem.Kind = ClipboardParse.link(text) != nil ? .link : .text
+            return (ClipboardItem(rawType: kind, textContent: text, contentHash: hash, byteCount: text.utf8.count), nil)
+        }
+        // ponytail: PNG encode runs on the main thread; move off-main if huge screenshots stall the UI.
+        if let png = pb.data(forType: .png) ?? pb.data(forType: .tiff).flatMap({ NSBitmapImageRep(data: $0)?.representation(using: .png, properties: [:]) }) {
+            return (ClipboardItem(rawType: .image, contentHash: ClipboardParse.hash(png), byteCount: png.count), png)
+        }
+        return nil
+    }
+
+    func prune() {
+        let s = Self.settings.value
+        let kept = ClipboardParse.pruned(items, retention: s.retention, limit: s.historyLimit)
+        deleteAssets(of: items.filter { old in !kept.contains { $0.id == old.id } })
+        items = kept
+        save()
+    }
+
+    func copy(_ item: ClipboardItem) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        switch item.rawType {
+        case .text, .link, .color: pb.setString(item.textContent ?? item.colorHex ?? "", forType: .string)
+        case .image: if let img = image(item) { pb.writeObjects([img]) }
+        case .file: pb.writeObjects(item.originalPaths.map { URL(fileURLWithPath: $0) as NSURL })
+        }
+        lastChangeCount = pb.changeCount   // our own write is not a new capture
+        update(item.id) { $0.copyCount += 1; $0.lastCopiedAt = Date() }
+    }
+
+    func toggleFavorite(_ id: ClipboardItem.ID) { update(id) { $0.isFavorite.toggle() } }
+
+    func delete(_ id: ClipboardItem.ID) {
+        deleteAssets(of: items.filter { $0.id == id })
+        items.removeAll { $0.id == id }
+        save()
+    }
+
+    /// Clears history; favorites stay.
+    func clear() {
+        deleteAssets(of: items.filter { !$0.isFavorite })
+        items.removeAll { !$0.isFavorite }
+        save()
+    }
+
+    func image(_ item: ClipboardItem) -> NSImage? {
+        guard let name = item.assetPath else { return nil }
+        if let img = thumbs.object(forKey: name as NSString) { return img }
+        guard let img = NSImage(contentsOf: Self.assets.appendingPathComponent(name)) else { return nil }
+        thumbs.setObject(img, forKey: name as NSString)
+        return img
+    }
+
+    private func update(_ id: ClipboardItem.ID, _ change: (inout ClipboardItem) -> Void) {
+        guard let i = items.firstIndex(where: { $0.id == id }) else { return }
+        change(&items[i])
+        save()
+    }
+
+    private func deleteAssets(of removed: [ClipboardItem]) {
+        for name in removed.compactMap(\.assetPath) { try? FileManager.default.removeItem(at: Self.assets.appendingPathComponent(name)) }
+    }
+
+    private func save() { DataFile.save(items, to: "clipboard.json") }
+}
+
+@MainActor
+enum ClipboardFeature {
+    static func start() { ClipboardStore.shared.start() }
+
+    static func selfTest() {
+        typealias P = ClipboardParse
+        // Color detection.
+        precondition(P.color("#ff8800") == "#FF8800")
+        precondition(P.color(" #f80 ") == "#FF8800")
+        precondition(P.color("rgb(255, 136, 0)") == "#FF8800")
+        precondition(P.color("rgba(0,0,0,0.5)") == "#000000")
+        precondition(P.color("#ggg") == nil && P.color("rgb(300,0,0)") == nil && P.color("#12345") == nil && P.color("red") == nil)
+        // Link detection.
+        precondition(P.link("https://example.com/a?b=1")?.host == "example.com")
+        precondition(P.link("  http://x.org  ") != nil)
+        precondition(P.link("ftp://x.org") == nil && P.link("see https://x.org") == nil && P.link("https://") == nil && P.link("hello") == nil)
+        // Retention cutoff math.
+        let now = Date(timeIntervalSince1970: 1_000_000_000)
+        func item(_ age: TimeInterval, fav: Bool = false, _ h: String = UUID().uuidString) -> ClipboardItem {
+            ClipboardItem(rawType: .text, contentHash: h, isFavorite: fav, capturedAt: now - age, lastCopiedAt: now - age)
+        }
+        let aged = [item(3_600), item(86_399), item(86_401), item(10 * 86_400, fav: true), item(40 * 86_400)]
+        precondition(P.pruned(aged, retention: .day, limit: 200, now: now).count == 3)       // 1h, 23h59m, favorite
+        precondition(P.pruned(aged, retention: .week, limit: 200, now: now).count == 4)
+        precondition(P.pruned(aged, retention: .month, limit: 200, now: now).count == 4)
+        precondition(P.pruned(aged, retention: .forever, limit: 200, now: now).count == 5)
+        precondition(P.pruned(aged, retention: .forever, limit: 1, now: now).count == 2)     // newest + favorite
+        // De-dup ordering.
+        let a = item(30, "a"), b = item(20, "b"), c = item(10, "c")
+        var list = [c, b, a]
+        var again = item(0, "a")
+        again.sourceApplication = "Notes"
+        list = P.inserting(again, into: list)
+        precondition(list.map(\.contentHash) == ["a", "c", "b"] && list[0].id == a.id && list[0].copyCount == 2)
+        precondition(list[0].lastCopiedAt == now && list[0].sourceApplication == "Notes")
+        list = P.inserting(item(0, "d"), into: list)
+        precondition(list.map(\.contentHash) == ["d", "a", "c", "b"])
+        precondition(P.hash(Data("x".utf8)) == "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881")
+        // Capture from a private pasteboard (the user's general pasteboard is not touched).
+        let pb = NSPasteboard(name: .init("app.notchly.selftest"))
+        func put(_ write: () -> Void) -> ClipboardItem.Kind? { pb.clearContents(); write(); return ClipboardStore.capture(pb)?.0.rawType }
+        precondition(put { pb.setString("hello world", forType: .string) } == .text)
+        precondition(put { pb.setString("https://apple.com", forType: .string) } == .link)
+        precondition(put { pb.setString("#0A84FF", forType: .string) } == .color)
+        precondition(put { pb.writeObjects([URL(fileURLWithPath: "/tmp") as NSURL]) } == .file)
+        let img = NSImage(size: NSSize(width: 4, height: 4), flipped: false) { r in NSColor.red.setFill(); r.fill(); return true }
+        precondition(put { pb.writeObjects([img]) } == .image)
+        precondition(ClipboardStore.capture(pb)?.1?.starts(with: [0x89, 0x50, 0x4E, 0x47]) == true)   // PNG magic
+        precondition(put { pb.setString("   ", forType: .string) } == nil)
+        pb.releaseGlobally()
+    }
+}
+
+// MARK: - Views
+
+private func appIcon(_ bundleID: String?) -> NSImage? {
+    guard let bundleID, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
+    return NSWorkspace.shared.icon(forFile: url.path)
+}
+
+private func colorFromHex(_ hex: String?) -> Color {
+    guard let hex, let v = UInt32(hex.dropFirst(), radix: 16) else { return .clear }
+    return Color(hex: v)
+}
+
+/// Small leading glyph for an item: color swatch, image thumbnail, file icon or kind symbol.
+private struct ClipboardGlyph: View {
+    let item: ClipboardItem
+    var size: CGFloat = 22
+    var body: some View {
+        switch item.rawType {
+        case .color:
+            RoundedRectangle(cornerRadius: 6, style: .continuous).fill(colorFromHex(item.colorHex)).frame(width: size, height: size)
+        case .image:
+            if let img = ClipboardStore.shared.image(item) {
+                Image(nsImage: img).resizable().aspectRatio(contentMode: .fill).frame(width: size, height: size)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+        case .file:
+            Image(nsImage: NSWorkspace.shared.icon(forFile: item.originalPaths.first ?? "/")).resizable().frame(width: size, height: size)
+        case .text, .link:
+            Image(systemName: item.rawType == .link ? "link" : "text.alignleft")
+                .font(.system(size: size * 0.5, weight: .semibold)).foregroundStyle(Theme.secondaryText)
+                .frame(width: size, height: size).background(Theme.chip, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+    }
+}
+
+struct ClipboardView: View {
+    @Environment(NotchModel.self) private var notch
+    @State private var filter: ClipboardFilter = .all
+    @State private var search = ""
+    @FocusState private var searching: Bool
+
+    var body: some View {
+        let store = ClipboardStore.shared
+        let q = search.trimmingCharacters(in: .whitespaces)
+        let shown = store.items.filter { item in
+            item.matches(filter) && (q.isEmpty || item.title.localizedCaseInsensitiveContains(q)
+                                     || (item.sourceApplication ?? "").localizedCaseInsensitiveContains(q))
+        }
+        VStack(spacing: 10) {
+            HStack(spacing: 6) {
+                ForEach(ClipboardFilter.allCases, id: \.self) { f in
+                    Button { withAnimation(Motion.snappy) { filter = f } } label: {
+                        Chip(title: f.rawValue.capitalized, symbol: f.symbol, fill: filter == f ? Theme.chipHover : Theme.chip.opacity(0.5))
+                    }
+                    .buttonStyle(PressableStyle())
+                }
+                Spacer(minLength: 8)
+                HStack(spacing: 5) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(Theme.tertiaryText)
+                    TextField("Search", text: $search).textFieldStyle(.plain).focused($searching)
+                }
+                .font(Theme.caption)
+                .padding(.horizontal, 9).padding(.vertical, 5)
+                .frame(width: 150)
+                .background(Theme.chip, in: Capsule())
+                RoundButton(symbol: "trash", size: 24) { withAnimation(Motion.snappy) { store.clear() } }
+                    .help("Clear history (keeps favorites)")
+            }
+            if !ClipboardStore.settings.value.enabled {
+                EmptyState(symbol: "doc.on.clipboard", title: "Clipboard history is off", subtitle: "Turn it on in Settings → Clipboard.")
+            } else if shown.isEmpty {
+                EmptyState(symbol: "doc.on.clipboard", title: store.items.isEmpty ? "Nothing copied yet" : "No matches",
+                           subtitle: store.items.isEmpty ? "Copy text, links, colors, images or files." : nil)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 10) { ForEach(shown) { ClipboardCard(item: $0) } }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onChange(of: searching) { notch.keyboardPinned = searching }
+        .onDisappear { if searching { notch.keyboardPinned = false } }
+    }
+}
+
+private struct ClipboardCard: View {
+    let item: ClipboardItem
+    @State private var hovering = false
+    @State private var copied = false
+
+    var body: some View {
+        let store = ClipboardStore.shared
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 5) {
+                if let icon = appIcon(item.sourceBundleIdentifier) { Image(nsImage: icon).resizable().frame(width: 16, height: 16) }
+                Text(item.lastCopiedAt, format: .relative(presentation: .named, unitsStyle: .abbreviated))
+                    .font(Theme.caption).foregroundStyle(Theme.tertiaryText).lineLimit(1)
+                Spacer(minLength: 0)
+                if hovering || item.isFavorite {
+                    Button { store.toggleFavorite(item.id) } label: {
+                        Image(systemName: item.isFavorite ? "star.fill" : "star")
+                            .font(.system(size: 11, weight: .semibold)).foregroundStyle(item.isFavorite ? .yellow : Theme.secondaryText)
+                    }
+                    .buttonStyle(PressableStyle())
+                }
+            }
+            preview.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .padding(10)
+        .frame(width: 150, height: 136)
+        .background(hovering ? Color(white: 0.15) : Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            if copied {
+                Label("Copied", systemImage: "checkmark").font(Theme.title(13))
+                    .padding(.horizontal, 12).padding(.vertical, 6).background(.black.opacity(0.75), in: Capsule())
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            }
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture { copy() }
+        .contextMenu {
+            Button("Copy") { copy() }
+            Button(item.isFavorite ? "Unfavorite" : "Favorite") { store.toggleFavorite(item.id) }
+            Divider()
+            Button("Delete") { withAnimation(Motion.snappy) { store.delete(item.id) } }
+        }
+    }
+
+    private func copy() {
+        ClipboardStore.shared.copy(item)
+        withAnimation(Motion.snappy) { copied = true }
+        Task { try? await Task.sleep(for: .seconds(0.9)); withAnimation(Motion.snappy) { copied = false } }
+    }
+
+    @ViewBuilder private var preview: some View {
+        switch item.rawType {
+        case .text:
+            Text(item.textContent ?? "").font(Theme.caption).foregroundStyle(.white.opacity(0.9)).lineLimit(5)
+        case .link:
+            VStack(alignment: .leading, spacing: 4) {
+                Label(ClipboardParse.link(item.textContent ?? "")?.host ?? "Link", systemImage: "link")
+                    .font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.blue).lineLimit(1)
+                Text(item.textContent ?? "").font(Theme.caption).foregroundStyle(Theme.secondaryText).lineLimit(3).truncationMode(.middle)
+            }
+        case .color:
+            VStack(alignment: .leading, spacing: 6) {
+                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(colorFromHex(item.colorHex))
+                Text(item.colorHex ?? "").font(Theme.caption.weight(.semibold)).monospaced()
+            }
+        case .image:
+            if let img = ClipboardStore.shared.image(item) {
+                Image(nsImage: img).resizable().aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Text("Image unavailable").font(Theme.caption).foregroundStyle(Theme.tertiaryText)
+            }
+        case .file:
+            VStack(spacing: 6) {
+                ClipboardGlyph(item: item, size: 48)
+                Text(item.title).font(Theme.caption).lineLimit(2).truncationMode(.middle).multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+struct ClipboardWidget: View {
+    var body: some View {
+        let items = ClipboardStore.shared.items.prefix(3)
+        WidgetCard(padding: 8) {
+            if items.isEmpty {
+                EmptyState(symbol: "doc.on.clipboard", title: "Clipboard", subtitle: "Copied items show here")
+            } else {
+                VStack(spacing: 4) { ForEach(items) { ClipboardWidgetRow(item: $0) } }
+                    .frame(maxHeight: .infinity, alignment: .top)
+            }
+        }
+    }
+}
+
+private struct ClipboardWidgetRow: View {
+    let item: ClipboardItem
+    @State private var hovering = false
+    @State private var copied = false
+    var body: some View {
+        Button {
+            ClipboardStore.shared.copy(item)
+            copied = true
+            Task { try? await Task.sleep(for: .seconds(0.9)); copied = false }
+        } label: {
+            HStack(spacing: 8) {
+                ClipboardGlyph(item: item, size: 26)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.rawType == .image ? "Image" : item.title.replacingOccurrences(of: "\n", with: " "))
+                        .font(Theme.caption.weight(.semibold)).lineLimit(1)
+                    Group {
+                        if copied { Text("Copied") } else { Text(item.lastCopiedAt, format: .relative(presentation: .named, unitsStyle: .abbreviated)) }
+                    }
+                    .font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.tertiaryText).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if item.isFavorite { Image(systemName: "star.fill").font(.system(size: 9)).foregroundStyle(.yellow) }
+            }
+            .padding(6)
+            .frame(maxWidth: .infinity, minHeight: 42)
+            .background(hovering ? Theme.chip : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+        .onHover { hovering = $0 }
+    }
+}
+
+struct ClipboardPane: View {
+    var body: some View {
+        let s = ClipboardStore.settings
+        SettingsPane(title: "Clipboard") {
+            SettingsCard {
+                SettingsRow(title: "Keep clipboard history") { Toggle("", isOn: s.binding(\.enabled)).labelsHidden() }
+                SettingsRow(title: "Keep items for", subtitle: "Favorites never expire.") {
+                    Picker("", selection: s.binding(\.retention)) {
+                        ForEach(ClipboardRetention.allCases, id: \.self) { Text($0 == .forever ? "Forever" : "One \($0.rawValue)").tag($0) }
+                    }
+                    .labelsHidden().frame(width: 140)
+                }
+                SettingsRow(title: "History limit", subtitle: "\(s.value.historyLimit) items") {
+                    Stepper("", value: s.binding(\.historyLimit), in: 10...2000, step: 10).labelsHidden()
+                }
+                SettingsRow(title: "Skip passwords", subtitle: "Ignore items marked concealed or transient by password managers.") {
+                    Toggle("", isOn: s.binding(\.skipConcealed)).labelsHidden()
+                }
+                SettingsRow(title: "Clear history on quit", subtitle: "Favorites are kept.") {
+                    Toggle("", isOn: s.binding(\.clearOnQuit)).labelsHidden()
+                }
+            }
+            SettingsCard(title: "Excluded apps") {
+                ForEach(s.value.excludedBundleIDs, id: \.self) { id in
+                    SettingsRow(title: NSWorkspace.shared.urlForApplication(withBundleIdentifier: id)?.deletingPathExtension().lastPathComponent ?? id,
+                                subtitle: id) {
+                        Button { s.value.excludedBundleIDs.removeAll { $0 == id } } label: { Image(systemName: "minus.circle.fill").foregroundStyle(.red) }
+                            .buttonStyle(.plain)
+                    }
+                }
+                HStack {
+                    Spacer()
+                    Button("Add App…") {
+                        if let path = QuickAppsSettings.pickApp(), let id = Bundle(path: path)?.bundleIdentifier,
+                           !s.value.excludedBundleIDs.contains(id) { s.value.excludedBundleIDs.append(id) }
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+            SettingsCard(title: "History") {
+                SettingsRow(title: "\(ClipboardStore.shared.items.count) items saved") {
+                    Button("Clear history") { ClipboardStore.shared.clear() }
+                }
+            }
+        }
+        .onChange(of: s.value) { ClipboardStore.shared.prune() }
+    }
+}
+
+// MARK: - Notes widget (one quick note, autosaved to notes.json)
+
+struct QuickNote: Codable { var text = ""; var updatedAt = Date() }
+
+@MainActor @Observable
+final class NotesStore {
+    static let shared = NotesStore()
+    var text: String { didSet { scheduleSave() } }
+    @ObservationIgnored private var pending: Task<Void, Never>?
+
+    private init() {
+        text = DataFile.load("notes.json", as: QuickNote.self)?.text ?? ""
+        // Flush a debounced save that has not run yet.
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated {
+                let s = NotesStore.shared
+                s.pending?.cancel()
+                DataFile.save(QuickNote(text: s.text), to: "notes.json")
+            }
+        }
+    }
+
+    private func scheduleSave() {
+        pending?.cancel()
+        pending = Task { [text] in
+            try? await Task.sleep(for: .seconds(0.6))
+            guard !Task.isCancelled else { return }
+            DataFile.save(QuickNote(text: text), to: "notes.json")
+        }
+    }
+}
+
+struct NotesWidget: View {
+    @Environment(NotchModel.self) private var notch
+    @FocusState private var editing: Bool
+    var body: some View {
+        @Bindable var store = NotesStore.shared
+        ZStack(alignment: .topLeading) {
+            TextEditor(text: $store.text)
+                .font(Theme.body)
+                .scrollContentBackground(.hidden)
+                .scrollIndicators(.never)
+                .focused($editing)
+                .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 34)
+            if store.text.isEmpty {
+                Text("Quick note…").font(Theme.body).foregroundStyle(Theme.tertiaryText)
+                    .padding(.horizontal, 13).padding(.top, 10).allowsHitTesting(false)
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Theme.blue)
+                .frame(width: 18, height: 18)
+                .overlay(Image(systemName: "note.text").font(.system(size: 9, weight: .bold)))
+                .padding(12)
+        }
+        .background(Theme.noteBG, in: RoundedRectangle(cornerRadius: Theme.widgetRadius, style: .continuous))
+        .onChange(of: editing) { notch.keyboardPinned = editing }
+        .onDisappear { if editing { notch.keyboardPinned = false } }
+    }
+}

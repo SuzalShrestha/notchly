@@ -1,0 +1,25 @@
+name: Build
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build app
+        run: ./make-app.sh
+      - name: Self-tests (debug build; -O strips assert)
+        run: swift build && .build/debug/Notchly --selftest
+      - name: Zip
+        run: ditto -c -k --keepParent build/Notchly.app Notchly.zip
+      - uses: actions/upload-artifact@v4
+        with: { name: Notchly, path: Notchly.zip }
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: gh release create "$GITHUB_REF_NAME" Notchly.zip --title "Notchly $GITHUB_REF_NAME" --generate-notes
