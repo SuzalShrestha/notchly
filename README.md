@@ -1,5 +1,10 @@
 # Notchly
 
+[![Build](https://github.com/SuzalShrestha/notchly/actions/workflows/build.yml/badge.svg)](https://github.com/SuzalShrestha/notchly/actions/workflows/build.yml)
+[![Latest release](https://img.shields.io/github/v/release/SuzalShrestha/notchly)](https://github.com/SuzalShrestha/notchly/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black)
+
 Notchly turns the MacBook notch into a small panel for music, files, your calendar, clipboard history and coding agents.
 Point at the notch and it opens. Move away and it closes.
 
@@ -9,7 +14,24 @@ Point at the notch and it opens. Move away and it closes.
 
 Notchly is an independent, MIT-licensed project inspired by [NotchNook](https://getnotchnook.com/). It is not affiliated
 with NotchNook or lo.cafe. It ships none of NotchNook's images, fonts or text. Some design values (notch geometry, springs,
-colors) were measured from NotchNook's app and website; the table below lists them.
+colors) were measured from NotchNook's app and website; the [table below](#design-values-measured-from-notchnook) lists them.
+
+## What it does
+
+| Tab | ⌃⌘ | What you get |
+|---|---|---|
+| Nook | 1 | A row of widgets you pick: music, calendar, weather, focus timer, to-dos, activity, AI usage, Pulse (CPU, memory, network), clipboard, notes, tray, volume, Shortcuts, mirror, quick apps |
+| Music | 2 | Artwork, scrubber, transport and synced lyrics for Spotify and Apple Music |
+| Calendar | 3 | Day strip, agenda, Join buttons for Meet, Zoom, Teams and Webex, and a quick event composer |
+| Tray | 4 | Drop files on the notch; drag them out, AirDrop or share them later |
+| Prompter | 5 | A teleprompter right under the camera, with countdown and speed control |
+| Clipboard | 6 | Searchable history of text, links, colors, images and files, with favorites |
+| Agents | 7 | Live view of each Claude Code session: the current step and an alert when it needs you |
+
+When the notch is closed it shows **live activities** beside the camera: the playing song, a running timer, an upcoming
+meeting, charging, an agent at work, a volume change, or the number of files in the tray.
+
+On a Mac without a notch, or on an external display, Notchly shows a thin handle at the top of the screen instead.
 
 ## Install
 
@@ -18,7 +40,63 @@ colors) were measured from NotchNook's app and website; the table below lists th
 3. The build is ad-hoc signed, not notarized. On first launch, open System Settings › Privacy & Security and click
    **Open Anyway**, or run `xattr -dr com.apple.quarantine /Applications/Notchly.app`.
 
-Needs macOS 14 or later on Apple silicon.
+Needs macOS 14 or later on Apple silicon. Each release has a `Notchly.zip.sha256` file; check it with
+`shasum -a 256 -c Notchly.zip.sha256`.
+
+Notchly lives in the menu bar (no Dock icon). Open it again from Applications at any time to bring up Settings.
+To update, use **Check for Updates…** in the menu bar menu, then replace the app in Applications.
+
+### Connect Claude Code
+
+Settings › Agents & AI Usage › **Install hooks** adds a small script to the `UserPromptSubmit`, `PreToolUse`,
+`PostToolUse`, `Notification`, `Stop` and `SessionEnd` hooks in `~/.claude/settings.json`. Your other hooks stay; the first
+time, the old file is backed up as `settings.json.notchly-backup`. New Claude Code sessions then show up in the Agents tab.
+**Remove hooks** takes them out again.
+
+## Privacy
+
+Notchly has no accounts, analytics or telemetry, and no third-party code. Your data stays in
+`~/Library/Application Support/Notchly` and the app's preferences. It connects to the network only for:
+
+| What | Service | Sends |
+|---|---|---|
+| Weather widget | [Open-Meteo](https://open-meteo.com) | Approximate coordinates, or the place name you typed |
+| Synced lyrics (can be turned off) | [LRCLIB](https://lrclib.net) | Track title, artist, album and length |
+| Spotify album art | Spotify's image CDN | The artwork URL Spotify reports |
+| Check for Updates (only when you click) | GitHub API | Nothing beyond the request |
+
+AI usage is read from local Claude Code and Codex logs. Agent events arrive over a Unix socket that only your user can open.
+
+### Permissions macOS may ask for
+
+| Permission | Used by |
+|---|---|
+| Automation (Spotify, Music) | Reading the current track and controlling playback |
+| Calendars | Showing events and adding the ones you create |
+| Location | Local weather; deny it and set a place in Settings instead |
+| Camera | The Mirror widget, only while it is on |
+
+## Uninstall
+
+1. Settings › Agents & AI Usage › **Remove hooks** (if you installed them).
+2. Quit Notchly from the menu bar and delete `Notchly.app`.
+3. Optionally delete your data:
+
+```bash
+rm -rf ~/Library/Application\ Support/Notchly
+defaults delete com.sujal.notchly
+```
+
+## Troubleshooting
+
+- **Nothing appears at the top of the screen.** Check Settings › General › Displays. On a screen without a notch the
+  resting notch is a thin handle; point at the top center to open it.
+- **macOS says the app is damaged or cannot be opened.** It is quarantined because it is not notarized; see step 3 of Install.
+- **Music shows nothing.** Allow Notchly to control Spotify or Music in System Settings › Privacy & Security › Automation.
+- **Agents tab stays empty.** Install the hooks (above), then start a *new* Claude Code session.
+- **⌃⌘1–7 clash with another app.** Turn off navigation shortcuts in Settings › Keyboard Shortcuts.
+
+Still stuck? [Open an issue](https://github.com/SuzalShrestha/notchly/issues/new/choose).
 
 ## Build, test, run
 
@@ -31,10 +109,14 @@ Works with Xcode or with only the Command Line Tools. With only the Command Line
 when it is installed: the macOS 27 SDK turns `@State` into a macro whose plugin ships only with Xcode.
 
 Launch flags: `--selftest` (assert checks for all parsers and state machines), `--snapshot <dir>` (render every notch
-state and widget to PNG), `--open <tab>` (open the notch at launch), `--dock` (run as a regular app so UI-testing tools can see it).
+state and widget to PNG), `--open <tab>` (open the notch at launch), `--settings` (open Settings at launch), `--dock`
+(run as a regular app so UI-testing tools can see it).
 
-Every push builds the app and runs the self-tests on GitHub Actions. Pushing a `v*` tag also publishes a release with `Notchly.zip`.
+Every push builds the app, runs the self-tests and uploads the snapshots on GitHub Actions. Pushing a `v*` tag that
+matches the version in `Info.plist` also publishes a release with `Notchly.zip` and its checksum.
 The website is plain HTML in [`docs/`](docs/), served by GitHub Pages.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the code layout and guidelines, and [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Design values measured from NotchNook
 
@@ -72,4 +154,8 @@ The website is plain HTML in [`docs/`](docs/), served by GitHub Pages.
 | Agents: Claude Code hook bridge (unix socket), sessions, steps, alert activity | yes | hooks install only from Settings button; no approve/answer from the notch; no Codex hooks |
 | AI usage (local token scan of Claude Code + Codex logs) | yes | no provider quota APIs, no USD cost |
 | Battery live activity | yes | |
-| Pockets, Terminal, Lock-screen widgets, Messages, Downloads, Video downloader, Bluetooth/AirPods, Liquid Glass shader, Onboarding, Sparkle updates | no | not built yet |
+| Pockets, Terminal, Lock-screen widgets, Messages, Downloads, Video downloader, Bluetooth/AirPods, Liquid Glass shader, Onboarding, automatic updates | no | not built yet; updates are a manual Check for Updates |
+
+## License
+
+[MIT](LICENSE). Security issues: see [SECURITY.md](SECURITY.md).

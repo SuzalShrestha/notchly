@@ -1,0 +1,39 @@
+name: Bug report
+description: Something in Notchly does not work as expected.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead. Screenshots or a screen recording help a lot.
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: Notchly version
+      description: Settings › About shows it.
+      placeholder: "1.0.0"
+    validations: { required: true }
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac model
+      placeholder: "macOS 15.1, MacBook Pro 14-inch (M3)"
+    validations: { required: true }
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Notch window / hover, Nook widgets, Music, Calendar, Tray, Prompter, Clipboard, Agents, Settings, Install / launch, Other]
+    validations: { required: true }
+  - type: dropdown
+    id: display
+    attributes:
+      label: Display
+      options: [Built-in display with a notch, External display, Both]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Extra details
+      description: Other notch apps you run, steps to reproduce, or Console output for the Notchly process.

@@ -20,7 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static private(set) weak var shared: AppDelegate?
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
-    private var hotKeys: [EventHotKeyRef?] = []
+    private var hotKeys: [EventHotKeyRef] = []
+    private var hotKeyHandlerInstalled = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
@@ -28,11 +29,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let i = CommandLine.arguments.firstIndex(of: "--snapshot"), i + 1 < CommandLine.arguments.count {
             Snapshot.run(to: CommandLine.arguments[i + 1]); exit(0)
         }
+        // One notch owner: a second copy (e.g. `open -n`) would stack panels and steal the agent socket.
+        if let id = Bundle.main.bundleIdentifier,
+           NSRunningApplication.runningApplications(withBundleIdentifier: id).contains(where: { $0 != NSRunningApplication.current }) {
+            exit(0)
+        }
         Features.start()
         PowerMonitor.shared.start()
         NotchManager.shared.start()
         setUpStatusItem()
-        registerHotKeys()
+        updateHotKeys()
+        // First launch: an agent app has no Dock icon or window, so show Settings with the welcome card.
+        if !UserDefaults.standard.bool(forKey: "didShowWelcome") {
+            UserDefaults.standard.set(true, forKey: "didShowWelcome")
+            showSettings()
+        }
         // Escape in a notch text field ends editing; a second Escape closes the open notch.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard event.keyCode == UInt16(kVK_Escape) else { return event }
@@ -51,6 +62,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--settings") { showSettings() }
     }
 
+    /// Opening the app again (Finder, Spotlight, Launchpad) while it runs shows Settings; there is no Dock icon to click.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showSettings()
+        return false
+    }
+
     private func setUpStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "rectangle.topthird.inset.filled", accessibilityDescription: "Notchly")
@@ -64,6 +81,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
+        menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Notchly Website", action: #selector(openWebsite), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Report an Issue…", action: #selector(reportIssue), keyEquivalent: "").target = self
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Notchly", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
         statusItem = item
@@ -73,6 +95,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let raw = sender.representedObject as? String, let mode = NotchMode(rawValue: raw) else { return }
         NotchManager.shared.open(mode)
     }
+
+    @objc private func checkForUpdates() { Updates.check() }
+    @objc private func openWebsite() { NSWorkspace.shared.open(AppInfo.website) }
+    @objc private func reportIssue() { NSWorkspace.shared.open(AppInfo.newIssue) }
 
     @objc func showSettings() {
         if settingsWindow == nil {
@@ -91,7 +117,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Navigation shortcuts ⌘⌃1…7 (NotchNook: modifiers = 9 → command + control, inferred)
 
-    private func registerHotKeys() {
+    /// Registers the global shortcuts when they are on and releases them when off, so other apps get ⌃⌘digit back.
+    func updateHotKeys() {
+        let enabled = Settings.general.value.navigationShortcutsEnabled
+        if !enabled {
+            hotKeys.forEach { UnregisterEventHotKey($0) }
+            hotKeys = []
+            return
+        }
+        guard hotKeys.isEmpty else { return }
+        installHotKeyHandler()
+        let keyCodes = [1: kVK_ANSI_1, 2: kVK_ANSI_2, 3: kVK_ANSI_3, 4: kVK_ANSI_4, 5: kVK_ANSI_5, 6: kVK_ANSI_6, 7: kVK_ANSI_7]
+        for (digit, code) in keyCodes {
+            var ref: EventHotKeyRef?
+            let status = RegisterEventHotKey(UInt32(code), UInt32(cmdKey | controlKey),
+                                             EventHotKeyID(signature: OSType(0x4E4F5443), id: UInt32(digit)), GetApplicationEventTarget(), 0, &ref)
+            if status == noErr, let ref { hotKeys.append(ref) }
+        }
+    }
+
+    private func installHotKeyHandler() {
+        guard !hotKeyHandlerInstalled else { return }
+        hotKeyHandlerInstalled = true
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
             var id = EventHotKeyID()
@@ -107,13 +154,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return noErr
         }, 1, &spec, nil, nil)
-        let keyCodes = [1: kVK_ANSI_1, 2: kVK_ANSI_2, 3: kVK_ANSI_3, 4: kVK_ANSI_4, 5: kVK_ANSI_5, 6: kVK_ANSI_6, 7: kVK_ANSI_7]
-        for (digit, code) in keyCodes {
-            var ref: EventHotKeyRef?
-            RegisterEventHotKey(UInt32(code), UInt32(cmdKey | controlKey),
-                                EventHotKeyID(signature: OSType(0x4E4F5443), id: UInt32(digit)), GetApplicationEventTarget(), 0, &ref)
-            hotKeys.append(ref)
-        }
     }
 }
 

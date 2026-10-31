@@ -19,6 +19,7 @@ enum Features {
         ClipboardFeature.selfTest()
         CalendarFeature.selfTest()
         AgentsFeature.selfTest()
+        AppInfo.selfTest()
         print("selftest: ok")
     }
 }
@@ -349,7 +350,8 @@ enum Shell {
         p.arguments = args
         let out = Pipe()
         p.standardOutput = out
-        p.standardError = Pipe()
+        // An unread stderr pipe fills at 64 KB and blocks the tool forever.
+        p.standardError = FileHandle.nullDevice
         try p.run()
         let data = out.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()

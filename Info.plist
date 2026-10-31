@@ -11,13 +11,11 @@
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
+<key>NSHumanReadableCopyright</key><string>Copyright © 2026 SuzalShrestha. MIT License.</string>
 <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
 <key>NSAppleEventsUsageDescription</key><string>Notchly controls playback in Spotify and Apple Music and reads what is playing.</string>
 <key>NSCalendarsFullAccessUsageDescription</key><string>Notchly shows your upcoming events in the notch and adds the events you create.</string>
 <key>NSCameraUsageDescription</key><string>Notchly shows your camera in the Mirror widget. Video never leaves your Mac.</string>
 <key>NSLocationWhenInUseUsageDescription</key><string>Notchly uses your approximate location for the Weather widget.</string>
 <key>NSLocationUsageDescription</key><string>Notchly uses your approximate location for the Weather widget.</string>
-<key>NSMicrophoneUsageDescription</key><string>Notchly listens while you read so the Prompter scrolls with your voice. Nothing is saved.</string>
-<key>NSSpeechRecognitionUsageDescription</key><string>Notchly turns speech into words to keep your place in the Prompter script.</string>
-<key>NSDownloadsFolderUsageDescription</key><string>Notchly watches your Downloads folder to show download progress.</string>
 </dict></plist>

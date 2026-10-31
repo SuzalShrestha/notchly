@@ -1,0 +1,14 @@
+name: Feature request
+description: Suggest a widget, tab or improvement.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: Describe the task or problem first, then the feature you have in mind.
+    validations: { required: true }
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: How do you do it today?

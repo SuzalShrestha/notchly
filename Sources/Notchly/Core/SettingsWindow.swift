@@ -97,16 +97,38 @@ struct SettingsRootView: View {
 }
 
 private struct GeneralPane: View {
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var loginStatus = SMAppService.mainApp.status
+    @State private var loginError: String?
+    @AppStorage("dismissedWelcomeCard") private var dismissedWelcome = false
+
     var body: some View {
         let s = Settings.general
         SettingsPane(title: "General") {
-            SettingsCard(title: "Behavior") {
-                SettingsRow(title: "Launch at login") {
-                    Toggle("", isOn: $launchAtLogin).labelsHidden().toggleStyle(.switch)
-                        .onChange(of: launchAtLogin) { _, on in
-                            try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
+            if !dismissedWelcome {
+                SettingsCard {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "hand.wave.fill").font(.system(size: 20)).foregroundStyle(.orange)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Welcome to Notchly").font(.headline)
+                            Text("Point at the notch at the top of your screen to open it, or press ⌃⌘1 to ⌃⌘7 to jump to a tab. Notchly lives in the menu bar; open it again from Applications to come back here. To follow Claude Code sessions, see Agents & AI Usage.")
+                                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         }
+                        Spacer(minLength: 8)
+                        Button("Got It") { withAnimation { dismissedWelcome = true } }
+                    }
+                    .padding(.vertical, 10)
+                }
+            }
+            SettingsCard(title: "Behavior") {
+                SettingsRow(title: "Launch at login", subtitle: loginSubtitle) {
+                    HStack {
+                        if loginStatus == .requiresApproval {
+                            Button("Open Login Items") { SMAppService.openSystemSettingsLoginItems() }
+                        }
+                        Toggle("", isOn: Binding(get: { loginStatus == .enabled || loginStatus == .requiresApproval },
+                                                 set: { setLaunchAtLogin($0) }))
+                            .labelsHidden().toggleStyle(.switch)
+                    }
                 }
                 Divider()
                 SettingsRow(title: "Open notch on hover", subtitle: "Off: click the notch to open it.") {
@@ -173,10 +195,30 @@ private struct GeneralPane: View {
                 SettingsRow(title: "Use on displays without a notch", subtitle: "Shows a small handle at the top.") {
                     Toggle("", isOn: s.binding(\.enableOnNonNotchScreens)).labelsHidden().toggleStyle(.switch)
                 }
-                Divider()
-                HStack { Spacer(); Button("Apply display changes") { NotchManager.shared.rebuild() } }.padding(.vertical, 6)
             }
         }
+        // Display options are read when the notch windows are built: rebuild them on change.
+        .onChange(of: Self.displayKey(s.value)) { NotchManager.shared.rebuild() }
+        .onAppear { loginStatus = SMAppService.mainApp.status }
+    }
+
+    private var loginSubtitle: String? {
+        if let loginError { return loginError }
+        return loginStatus == .requiresApproval ? "Waiting for approval in System Settings › General › Login Items." : nil
+    }
+
+    private func setLaunchAtLogin(_ on: Bool) {
+        do {
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            loginError = nil
+        } catch {
+            loginError = error.localizedDescription
+        }
+        loginStatus = SMAppService.mainApp.status
+    }
+
+    private static func displayKey(_ g: GeneralSettings) -> String {
+        "\(g.displaySelection.rawValue)|\(g.enableOnNonNotchScreens)|\(g.notchWidthFineTune)|\(g.notchHeightFineTune)|\(g.showNotchInScreenshots)"
     }
 }
 
@@ -214,6 +256,7 @@ private struct ShortcutsPane: View {
             SettingsCard {
                 SettingsRow(title: "Navigation shortcuts", subtitle: "Open a tab from anywhere.") {
                     Toggle("", isOn: Settings.general.binding(\.navigationShortcutsEnabled)).labelsHidden().toggleStyle(.switch)
+                        .onChange(of: Settings.general.value.navigationShortcutsEnabled) { AppDelegate.shared?.updateHotKeys() }
                 }
                 ForEach(NotchMode.allCases) { mode in
                     Divider()
@@ -233,12 +276,37 @@ private struct ShortcutsPane: View {
 private struct AboutPane: View {
     var body: some View {
         SettingsPane(title: "About") {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Notchly").font(.system(size: 28, weight: .bold))
-                Text("A personal notch utility rebuilt from a study of NotchNook Pro 2.0.3.")
-                    .foregroundStyle(.secondary)
-                Text("Data folder: \(DataFile.folder.path)").font(.caption).textSelection(.enabled)
-                Button("Show data folder") { NSWorkspace.shared.open(DataFile.folder) }
+            HStack(alignment: .top, spacing: 16) {
+                Image(systemName: "rectangle.topthird.inset.filled")
+                    .font(.system(size: 30, weight: .semibold)).foregroundStyle(.white)
+                    .frame(width: 64, height: 64)
+                    .background(LinearGradient(colors: [Color(hex: 0x6F27C4), Color(hex: 0x12061F)], startPoint: .top, endPoint: .bottom),
+                                in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Notchly").font(.system(size: 28, weight: .bold))
+                    Text("Version \(AppInfo.version)").foregroundStyle(.secondary).textSelection(.enabled)
+                    Text("Free and open source under the MIT license. An independent project, not affiliated with NotchNook or lo.cafe.")
+                        .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).padding(.top, 4)
+                }
+            }
+            SettingsCard(title: "Project") {
+                SettingsRow(title: "Updates", subtitle: "Checks GitHub only when you click.") {
+                    Button("Check for Updates…") { Updates.check() }
+                }
+                Divider()
+                SettingsRow(title: "Website") { Link("suzalshrestha.github.io/notchly", destination: AppInfo.website) }
+                Divider()
+                SettingsRow(title: "Source code") { Link("github.com/\(AppInfo.repository)", destination: AppInfo.sourceCode) }
+                Divider()
+                SettingsRow(title: "Found a bug or have an idea?") { Link("Open an issue", destination: AppInfo.newIssue) }
+            }
+            SettingsCard(title: "Your data") {
+                SettingsRow(title: "Data folder", subtitle: DataFile.folder.path) {
+                    Button("Show in Finder") { NSWorkspace.shared.open(DataFile.folder) }
+                }
+                Divider()
+                Text("Clipboard history, tray, notes, to-dos, timers and scripts are stored here. Settings live in the app's preferences. Nothing is uploaded.")
+                    .font(.caption).foregroundStyle(.secondary).padding(.vertical, 6)
             }
         }
     }

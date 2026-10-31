@@ -6,9 +6,16 @@ cd "${0:A:h}"
 # Command Line Tools only: the macOS 27 SDK needs the @State macro plugin that ships with Xcode, so use 26.5.
 SDK=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
 [[ -d $SDK ]] && export SDKROOT=$SDK
-swift build -c release 2>&1 | grep -E 'error|warning: unre|Build complete' || true
+LOG=$(mktemp -t notchly-build)
+trap 'rm -f $LOG' EXIT
+# A failed build must not package an older binary left in .build/release.
+if ! swift build -c release >$LOG 2>&1; then
+  cat $LOG
+  echo "build failed"
+  exit 1
+fi
+grep -E 'error|warning: unre|Build complete' $LOG || true
 BIN=.build/release/Notchly
-[[ -x $BIN ]] || { echo "build failed"; exit 1; }
 APP=build/Notchly.app
 rm -rf $APP && mkdir -p $APP/Contents/MacOS $APP/Contents/Resources
 cp $BIN $APP/Contents/MacOS/Notchly

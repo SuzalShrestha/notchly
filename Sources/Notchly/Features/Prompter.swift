@@ -25,18 +25,39 @@ final class PrompterViewModel {
     enum State: Equatable { case idle, countdown(Int), running, paused }
 
     static let shared = PrompterViewModel()
-    var scripts: [PrompterScript] { didSet { DataFile.save(scripts, to: "prompter.json") } }
+    /// Saved with a short debounce: the editor changes this on every keystroke.
+    var scripts: [PrompterScript] { didSet { scheduleSave() } }
     private(set) var state: State = .idle
     private(set) var offset: CGFloat = 0
     @ObservationIgnored var contentHeight: CGFloat = 0
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var countdown: Task<Void, Never>?
     @ObservationIgnored private var lastTick: CFTimeInterval = 0
+    @ObservationIgnored private var pendingSave: Task<Void, Never>?
 
     init() {
         scripts = DataFile.load("prompter.json", as: [PrompterScript].self) ?? [PrompterScript(
             title: "Welcome to Prompter",
             content: "This is your teleprompter. It sits right under the camera, so you can read while you look at your audience. Press play: after a short countdown the text scrolls up at a steady speed. Change the speed with the minus and plus buttons, or with Shift and the left and right arrow keys. Press the pencil to write your own script.")]
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { PrompterViewModel.shared.saveNow() }
+        }
+    }
+
+    private func scheduleSave() {
+        pendingSave?.cancel()
+        pendingSave = Task { [scripts] in
+            try? await Task.sleep(for: .seconds(0.5))
+            guard !Task.isCancelled else { return }
+            DataFile.save(scripts, to: "prompter.json")
+        }
+    }
+
+    func saveNow() {
+        guard let pendingSave else { return }
+        pendingSave.cancel()
+        self.pendingSave = nil
+        DataFile.save(scripts, to: "prompter.json")
     }
 
     var current: PrompterScript? { scripts.first { $0.id == PrompterFeature.settings.value.selectedId } ?? scripts.first }
