@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Model (same field names as NotchNook's TimerEntry / PomodoroSettings)
 
 struct PomodoroSettings: Codable, Equatable {
-    var focusMinutes = 10                 // settings-schema.json pomodoroSettings
+    var focusMinutes = 10                 // NotchNook pomodoroSettings default
     var breakMinutes = 5
     var showInNotch = true
     var rainDuringBreaks = true
@@ -166,7 +166,7 @@ private struct TimerClock: View {
     }
 }
 
-// MARK: - Nook widget (4 units, timerWidgetMock.png)
+// MARK: - Nook widget (4 units)
 
 struct TimerWidget: View {
     @State private var isBreak = false

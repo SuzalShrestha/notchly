@@ -140,7 +140,8 @@ final class MediaService {
     func next() { send("next track") }
     func previous() { send("previous track") }
     func seek(to time: TimeInterval) {
-        send("set player position to \(Int(time))")
+        // AppleScript reads "12.5" in every locale; keep sub-second precision.
+        send("set player position to \(String(format: "%.2f", max(0, time)))")
         track?.elapsed = time; anchor = Date()
     }
 
@@ -307,7 +308,7 @@ enum LRCLIBLyricsProvider {
         ]
         guard let url = c.url else { return .notFound }
         var req = URLRequest(url: url)
-        req.setValue("Notchly (personal notch app)", forHTTPHeaderField: "User-Agent")
+        req.setValue(AppInfo.userAgent, forHTTPHeaderField: "User-Agent")
         guard let (data, resp) = try? await URLSession.shared.data(for: req), let http = resp as? HTTPURLResponse else { return nil }
         if http.statusCode == 404 { return .notFound }
         guard http.statusCode == 200, let r = try? JSONDecoder().decode(Record.self, from: data) else { return nil }

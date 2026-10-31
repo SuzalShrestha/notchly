@@ -31,7 +31,7 @@ enum ClipboardFilter: String, CaseIterable {
     }
 }
 
-// Default retention is not in research/settings-schema.json; `.month` is a guess.
+// NotchNook's default retention is unknown; `.month` is a guess.
 struct ClipboardSettings: Codable, Equatable {
     var enabled = true
     var retention: ClipboardRetention = .month

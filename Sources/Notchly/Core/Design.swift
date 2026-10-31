@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Design tokens recovered from NotchNook Pro (see research/SPEC.md "Design tokens").
+// Design tokens measured from NotchNook (README › "Design values measured from NotchNook").
 enum Theme {
     static let panel = Color.black
     static let card = Color(white: 0.11)            // widget card on black (#1C1C1E)
@@ -25,7 +25,7 @@ enum Theme {
     static let caption = Font.system(size: 11, weight: .medium)
 }
 
-// Recovered from NotchView.openAnimation / closeAnimation (research/SPEC.md).
+// Springs measured from NotchNook's NotchView.openAnimation / closeAnimation.
 enum Motion {
     static func open(speed: Double = 1) -> Animation {
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { return .easeInOut(duration: 0.2) }
@@ -40,7 +40,7 @@ enum Motion {
 
 /// Notch body with rounded bottom corners and concave top "ears" that sit outside the body.
 /// Path and radii match NotchShape.path(in:) in the app binary and the website's notch module
-/// (research/web/WEB_DESIGN_SYSTEM.md §9): cubic corners with a 0.62 control factor.
+/// (docs/index.html draws the same path): cubic corners with a 0.62 control factor.
 struct NotchShape: Shape {
     var bottomRadius: CGFloat
     var earRadius: CGFloat

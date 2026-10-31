@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - Model (research/SPEC.md data model)
+// MARK: - Model (same field names as NotchNook's to-do data)
 
 struct TodoItem: Codable, Identifiable, Equatable {
     var taskUUID = UUID()
@@ -123,7 +123,7 @@ final class TodoStore {
     }
 }
 
-// MARK: - Nook widget (4 units, todoListWidgetMock.png)
+// MARK: - Nook widget (4 units)
 
 struct TodoWidget: View {
     @Environment(NotchModel.self) private var notch
