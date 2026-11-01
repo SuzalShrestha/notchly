@@ -84,7 +84,7 @@ private func drawNotch(_ g: inout GraphicsContext, display: CGRect, closed: CGSi
     let inner = CGRect(x: r.minX + ear + 12, y: r.minY + h * 0.26, width: w - 24, height: h * 0.62)
     // Tab dots along the top.
     for i in 0..<5 {
-        let d = CGRect(x: inner.minX + Double(i) * 11, y: r.minY + h * 0.08, width: 6, height: 6)
+        let d = CGRect(x: inner.minX + CGFloat(i) * 11, y: r.minY + h * 0.08, width: 6, height: 6)
         c.fill(Path(ellipseIn: d), with: .color(.white.opacity(i == 0 ? 0.9 : 0.3)))
     }
     // Music card.
@@ -151,7 +151,7 @@ struct DeskIllustration: View {
         let mx = cx + 252
         for i in 0..<2 {
             let ph = (t * 0.45 + Double(i) * 0.5).truncatingRemainder(dividingBy: 1)
-            let x0 = mx - 6 + Double(i) * 11, y0 = ground - 44 - ph * 22
+            let x0: CGFloat = mx - 6 + CGFloat(i) * 11, y0: CGFloat = ground - 44 - CGFloat(ph) * 22
             var steam = Path()
             steam.move(to: CGPoint(x: x0, y: y0))
             steam.addCurve(to: CGPoint(x: x0, y: y0 - 22), control1: CGPoint(x: x0 + 7, y: y0 - 7), control2: CGPoint(x: x0 - 7, y: y0 - 15))
@@ -194,8 +194,8 @@ struct HoverIllustration: View {
     private func draw(_ g: inout GraphicsContext, _ size: CGSize, _ t: Double) {
         let frame = CGRect(x: size.width / 2 - 240, y: 6, width: 480, height: size.height - 12)
         let loop = t.truncatingRemainder(dividingBy: 4.8)
-        let move = smooth(0.2, 1.3, loop)
-        let leave = smooth(3.5, 4.1, loop)
+        let move = CGFloat(smooth(0.2, 1.3, loop))
+        let leave = CGFloat(smooth(3.5, 4.1, loop))
         let open = Motion.reduceMotion ? 1 : backOut(smooth(1.3, 1.75, loop)) * (1 - smooth(3.55, 3.95, loop))
 
         // Screen corner with a menu bar strip.
@@ -206,11 +206,11 @@ struct HoverIllustration: View {
         c.clip(to: Path(roundedRect: frame, cornerRadius: 14, style: .continuous))
         c.fill(Path(bar), with: .color(.white.opacity(0.16)))
         for i in 0..<4 {
-            c.fill(Path(roundedRect: CGRect(x: frame.minX + 14 + Double(i) * 30, y: bar.midY - 3, width: i == 0 ? 12 : 22, height: 6), cornerRadius: 3),
+            c.fill(Path(roundedRect: CGRect(x: frame.minX + 14 + CGFloat(i) * 30, y: bar.midY - 3, width: i == 0 ? 12 : 22, height: 6), cornerRadius: 3),
                    with: .color(.white.opacity(i == 0 ? 0.85 : 0.5)))
         }
         for i in 0..<3 {
-            c.fill(Path(ellipseIn: CGRect(x: frame.maxX - 22 - Double(i) * 18, y: bar.midY - 4, width: 8, height: 8)), with: .color(.white.opacity(0.6)))
+            c.fill(Path(ellipseIn: CGRect(x: frame.maxX - 22 - CGFloat(i) * 18, y: bar.midY - 4, width: 8, height: 8)), with: .color(.white.opacity(0.6)))
         }
         drawNotch(&g, display: frame, closed: CGSize(width: 92, height: 20), opened: CGSize(width: 320, height: 128), open: open)
 
@@ -218,11 +218,14 @@ struct HoverIllustration: View {
         let start = CGPoint(x: frame.minX + frame.width * 0.22, y: frame.maxY - 30)
         let target = CGPoint(x: frame.midX + 30, y: frame.minY + 12)
         let away = CGPoint(x: frame.maxX - 70, y: frame.maxY - 40)
-        let inside = CGPoint(x: target.x, y: target.y + 70 * open)
+        let inside = CGPoint(x: target.x, y: target.y + 70 * CGFloat(open))
         var p = CGPoint(x: start.x + (target.x - start.x) * move, y: start.y + (target.y - start.y) * move)
         if loop > 1.3 { p = inside }
         if leave > 0 { p = CGPoint(x: inside.x + (away.x - inside.x) * leave, y: inside.y + (away.y - inside.y) * leave) }
-        if loop > 4.1 { p = CGPoint(x: away.x + (start.x - away.x) * smooth(4.1, 4.8, loop), y: away.y + (start.y - away.y) * smooth(4.1, 4.8, loop)) }
+        if loop > 4.1 {
+            let back = CGFloat(smooth(4.1, 4.8, loop))
+            p = CGPoint(x: away.x + (start.x - away.x) * back, y: away.y + (start.y - away.y) * back)
+        }
         drawPointer(&g, at: p, pressed: loop > 1.15 && loop < 1.4)
     }
 
@@ -252,8 +255,11 @@ struct ConfettiIllustration: View {
                 for i in 0..<26 {
                     let seed = Double(i) * 2.399963
                     let ph = (t * 0.28 + Double(i) / 26).truncatingRemainder(dividingBy: 1)
-                    let dist = 70 + ph * (size.width * 0.36) * (0.6 + 0.4 * sin(seed * 3))
-                    let p = CGPoint(x: c.x + cos(seed) * dist, y: c.y + sin(seed) * dist * 0.55 + ph * ph * 40)
+                    let spread: Double = 0.6 + 0.4 * sin(seed * 3)
+                    let dist = CGFloat(70 + ph * Double(size.width) * 0.36 * spread)
+                    let dx = CGFloat(cos(seed)) * dist
+                    let dy = CGFloat(sin(seed)) * dist * 0.55 + CGFloat(ph * ph * 40)
+                    let p = CGPoint(x: c.x + dx, y: c.y + dy)
                     var ctx = g
                     ctx.opacity = sin(ph * .pi) * 0.9
                     ctx.translateBy(x: p.x, y: p.y)
