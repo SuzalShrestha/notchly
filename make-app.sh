@@ -20,7 +20,9 @@ APP=build/Notchly.app
 rm -rf $APP && mkdir -p $APP/Contents/MacOS $APP/Contents/Resources
 cp $BIN $APP/Contents/MacOS/Notchly
 cp Info.plist $APP/Contents/Info.plist
-codesign --force --sign - --entitlements Notchly.entitlements $APP
+# Hardened runtime: without it DYLD_INSERT_LIBRARIES works, and injected code would inherit Notchly's
+# Calendar, Camera, Location and Automation permissions.
+codesign --force --options runtime --sign - --entitlements Notchly.entitlements $APP
 echo "built $APP"
 if [[ ${1:-} == --run ]]; then
   pkill -x Notchly || true

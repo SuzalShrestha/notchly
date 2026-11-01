@@ -24,7 +24,16 @@ enum AppInfo {
         return false
     }
 
+    /// Only a page of this repository on github.com is opened from an update check, whatever the API returns.
+    static func isReleasePage(_ url: URL?) -> Bool {
+        guard let url, url.scheme == "https", url.host?.lowercased() == "github.com", url.user == nil, url.port == nil else { return false }
+        return url.path.lowercased().hasPrefix("/\(repository.lowercased())/")
+    }
+
     static func selfTest() {
+        precondition(isReleasePage(URL(string: "https://github.com/SuzalShrestha/notchly/releases/tag/v1.2.0")))
+        precondition(!isReleasePage(URL(string: "https://github.com.evil.io/SuzalShrestha/notchly/")) && !isReleasePage(URL(string: "http://github.com/SuzalShrestha/notchly/x")))
+        precondition(!isReleasePage(URL(string: "https://github.com/SuzalShrestha/notchly-fake/x")) && !isReleasePage(URL(string: "file:///tmp/x")) && !isReleasePage(nil))
         precondition(isNewer("v1.1.0", than: "1.0.0") && isNewer("1.10.0", than: "1.9.3") && isNewer("v2", than: "1.99.99"))
         precondition(!isNewer("v1.0.0", than: "1.0.0") && !isNewer("1.0", than: "1.0.0") && !isNewer("v0.9.9", than: "1.0.0"))
         precondition(!isNewer("v1.0.0-beta", than: "1.0.0") && isNewer("v1.0.1-rc1", than: "1.0.0"))
@@ -70,7 +79,7 @@ enum Updates {
             alert.informativeText = "You have version \(AppInfo.version). Download the new version, quit Notchly, and replace the app in Applications. Your settings and data are kept."
             alert.addButton(withTitle: "Download")
             alert.addButton(withTitle: "Later")
-            download = URL(string: release.htmlURL) ?? AppInfo.releases
+            download = URL(string: release.htmlURL).flatMap { AppInfo.isReleasePage($0) ? $0 : nil } ?? AppInfo.releases
         } else if release != nil {
             alert.messageText = "Notchly is up to date"
             alert.informativeText = "Version \(AppInfo.version) is the latest release."

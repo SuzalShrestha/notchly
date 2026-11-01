@@ -171,7 +171,8 @@ private struct GeneralPane: View {
                     Slider(value: s.binding(\.notchHeightFineTune), in: -6...6, step: 1).frame(width: 180)
                 }
                 Divider()
-                SettingsRow(title: "Show notch in screenshots") {
+                SettingsRow(title: "Show notch in screenshots",
+                            subtitle: "Also shows it in screen recordings and screen sharing, clipboard history included.") {
                     Toggle("", isOn: s.binding(\.showNotchInScreenshots)).labelsHidden().toggleStyle(.switch)
                 }
             }

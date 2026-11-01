@@ -4,6 +4,25 @@ All notable changes to Notchly. Versions follow [semantic versioning](https://se
 
 ## Unreleased
 
+### Security
+- Release builds use the hardened runtime, with entitlements for the camera, calendars, location and Apple Events, so
+  injected code cannot borrow Notchly's permissions.
+- Clipboard history also skips auto-generated items and anything copied in a known password manager, ignores text over
+  1 MB, and is left out of Time Machine. The data folder is owner-only (0700, files 0600).
+- The agent socket refuses other users, reads connections in parallel so a slow client cannot stall Claude's hooks,
+  and keeps at most 32 sessions.
+- Installing hooks writes through a symlinked `settings.json`, keeps its file mode, refuses to overwrite a change Claude
+  Code made at the same moment, and shell-quotes the script path.
+- Calendar **Join** opens only https (http is upgraded), Zoom and Teams links.
+- Update checks only open release pages of this repository on github.com.
+- Weather sends coordinates rounded to about 1 km.
+- **Show notch in screenshots** is off by default for new installs, so screenshots and screen shares leave out clipboard
+  history (where the capture app respects it). Existing installs keep their setting.
+- Release zips get a GitHub build provenance attestation; CI actions are pinned to commit SHAs.
+
+### Fixed
+- The AI usage scanner reads transcripts instead of memory-mapping them, which could crash if a file shrank mid-scan.
+
 ### Added
 - **Claude pet** in the Agents tab and beside the closed notch. It naps when nothing runs, thinks, works with a prop for
   each tool (reading, editing, running commands, searching, browsing), waves when Claude needs you, celebrates when a turn

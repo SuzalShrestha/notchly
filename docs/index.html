@@ -407,7 +407,7 @@ footer::before { content: ""; position: absolute; top: 0; left: 50%; width: min(
       <details><summary>Does it work on a Mac without a notch?</summary>
         <p>Yes. On a MacBook Air without a notch, or on an external display, Notchly shows a thin handle at the top center of the screen. Point at it and the notch opens the same way. You can turn this off, or pick which displays to use, in Settings.</p></details>
       <details><summary>Why does macOS warn me when I open it?</summary>
-        <p>Release builds are signed ad hoc and not notarized by Apple, so Gatekeeper asks once. Allow it in System Settings › Privacy &amp; Security, or build it yourself from source. Every release has a SHA-256 checksum you can check with <code>shasum -a 256 -c Notchly.zip.sha256</code>.</p></details>
+        <p>Release builds are signed ad hoc and not notarized by Apple, so Gatekeeper asks once. Allow it in System Settings › Privacy &amp; Security, or build it yourself from source. Check that a download was built by this repository's release workflow with <code>gh attestation verify Notchly.zip --repo SuzalShrestha/notchly</code>; every release also has a SHA-256 checksum for <code>shasum -a 256 -c Notchly.zip.sha256</code>.</p></details>
       <details><summary>Which music apps does it support?</summary>
         <p>Spotify and Apple Music. Notchly reads the current track and controls playback through Automation, so macOS asks once for permission. Browsers and other players are not supported yet.</p></details>
       <details><summary>How do I connect Claude Code?</summary>

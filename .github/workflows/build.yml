@@ -16,8 +16,12 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: macos-15
     timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write       # build provenance for tagged releases
+      attestations: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Check tag matches app version
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -29,13 +33,18 @@ jobs:
         run: swift build && .build/debug/Notchly --selftest
       - name: Snapshots
         run: build/Notchly.app/Contents/MacOS/Notchly --snapshot build/snapshots
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with: { name: snapshots, path: build/snapshots }
       - name: Zip
         run: |
           ditto -c -k --keepParent build/Notchly.app Notchly.zip
           shasum -a 256 Notchly.zip | tee Notchly.zip.sha256
-      - uses: actions/upload-artifact@v5
+      # Signed by GitHub, so it proves where the zip came from (the .sha256 next to it only catches corruption).
+      - name: Attest build provenance
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with: { subject-path: Notchly.zip }
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with: { name: Notchly, path: 'Notchly.zip*' }
 
   release:
@@ -45,7 +54,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with: { name: Notchly }
       - name: Release
         env: { GH_TOKEN: '${{ github.token }}' }

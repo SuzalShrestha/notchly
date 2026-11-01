@@ -194,7 +194,9 @@ final class WeatherStore: NSObject, CLLocationManagerDelegate {
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let c = locations.last?.coordinate else { return }
-        Task { @MainActor in await self.fetch(latitude: c.latitude, longitude: c.longitude, name: "My Location", isCurrentLocation: true) }
+        // Two decimals (about 1 km) is plenty for a forecast; the exact fix never leaves the Mac.
+        let lat = (c.latitude * 100).rounded() / 100, lon = (c.longitude * 100).rounded() / 100
+        Task { @MainActor in await self.fetch(latitude: lat, longitude: lon, name: "My Location", isCurrentLocation: true) }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
