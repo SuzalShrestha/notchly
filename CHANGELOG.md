@@ -4,6 +4,8 @@ All notable changes to Notchly. Versions follow [semantic versioning](https://se
 
 ## Unreleased
 
+## 1.1.0 — 2026-11-01
+
 ### Security
 - Release builds use the hardened runtime, with entitlements for the camera, calendars, location and Apple Events, so
   injected code cannot borrow Notchly's permissions.
