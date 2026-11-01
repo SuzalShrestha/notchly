@@ -10,6 +10,10 @@ Point at the notch and it opens. Move away and it closes.
 
 **Website:** https://suzalshrestha.github.io/notchly/ · **Download:** [latest release](https://github.com/SuzalShrestha/notchly/releases/latest)
 
+[![Watch the 1-minute launch film](docs/img/launch-poster.jpg)](https://suzalshrestha.github.io/notchly/video/notchly-launch.mp4)
+
+▶ **[Watch the launch film](https://suzalshrestha.github.io/notchly/video/notchly-launch.mp4)** (58 s)
+
 ![The open notch, Nook tab](docs/img/open-nook.png)
 
 Notchly is an independent, MIT-licensed project inspired by [NotchNook](https://getnotchnook.com/). It is not affiliated
