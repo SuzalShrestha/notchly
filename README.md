@@ -12,7 +12,11 @@ Point at the notch and it opens. Move away and it closes.
 
 [![Watch the 1-minute launch film](docs/img/launch-poster.jpg)](https://suzalshrestha.github.io/notchly/video/notchly-launch.mp4)
 
-▶ **[Watch the launch film](https://suzalshrestha.github.io/notchly/video/notchly-launch.mp4)** (58 s)
+
+
+https://github.com/user-attachments/assets/53fe51a1-182b-4129-afd0-3e4c19074752
+
+
 
 ![The open notch, Nook tab](docs/img/open-nook.png)
 
