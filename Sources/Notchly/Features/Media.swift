@@ -563,7 +563,8 @@ private struct AudioBars: View {
         let s = MediaFeature.activitySettings.value
         let tint = s.isAutomaticallyColored ? MediaService.shared.tint : .white
         if s.showVisualizer {
-            TimelineView(.animation(minimumInterval: 1.0 / 20)) { ctx in
+            // Paused while the track is paused: no 20 fps redraws for bars that should be still.
+            TimelineView(.animation(minimumInterval: 1.0 / 20, paused: MediaService.shared.track?.isPlaying != true || Motion.reduceMotion)) { ctx in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 HStack(spacing: 2) {
                     ForEach(0..<4, id: \.self) { i in

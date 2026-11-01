@@ -30,7 +30,7 @@ colors) were measured from NotchNook's app and website; the [table below](#desig
 | Tray | 4 | Drop files on the notch; drag them out, AirDrop or share them later |
 | Prompter | 5 | A teleprompter right under the camera, with countdown and speed control |
 | Clipboard | 6 | Searchable history of text, links, colors, images and files, with favorites |
-| Agents | 7 | Live view of each Claude Code session: the current step and an alert when it needs you |
+| Agents | 7 | Each Claude Code session live: a step timeline with durations, files changed, a tool mix, an alert when it needs you, and a Claude pet that acts out what the agent is doing |
 
 When the notch is closed it shows **live activities** beside the camera: the playing song, a running timer, an upcoming
 meeting, charging, an agent at work, a volume change, or the number of files in the tray.
@@ -52,7 +52,7 @@ To update, use **Check for Updates…** in the menu bar menu, then replace the a
 
 ### Connect Claude Code
 
-Settings › Agents & AI Usage › **Install hooks** adds a small script to the `UserPromptSubmit`, `PreToolUse`,
+The welcome tour, the empty Agents tab and Settings › Agents & AI Usage › **Install hooks** all do the same thing: it adds a small script to the `UserPromptSubmit`, `PreToolUse`,
 `PostToolUse`, `Notification`, `Stop` and `SessionEnd` hooks in `~/.claude/settings.json`. Your other hooks stay; the first
 time, the old file is backed up as `settings.json.notchly-backup`. New Claude Code sessions then show up in the Agents tab.
 **Remove hooks** takes them out again.
@@ -155,7 +155,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the code layout and guidelines, and [
 | Weather (Open-Meteo) | yes | no air quality |
 | Timers / Pomodoro + live activities | yes | no focus music, no rain ambience |
 | Prompter: auto-scroll, speed, countdown, scripts | yes | no voice-follow mode |
-| Agents: Claude Code hook bridge (unix socket), sessions, steps, alert activity | yes | hooks install only from Settings button; no approve/answer from the notch; no Codex hooks |
+| Agents: Claude Code hook bridge (unix socket), sessions, steps, alert activity | yes | hooks install only on a button press (tour, empty Agents tab, Settings); no approve/answer from the notch; no Codex hooks |
 | AI usage (local token scan of Claude Code + Codex logs) | yes | no provider quota APIs, no USD cost |
 | Battery live activity | yes | |
 | Pockets, Terminal, Lock-screen widgets, Messages, Downloads, Video downloader, Bluetooth/AirPods, Liquid Glass shader, Onboarding, automatic updates | no | not built yet; updates are a manual Check for Updates |

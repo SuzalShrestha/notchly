@@ -53,6 +53,42 @@ enum Snapshot {
                 try? png.write(to: out.appendingPathComponent("widget-\(w.rawValue).png"))
             }
         }
+        func save<V: View>(_ name: String, _ view: V) {
+            let r = ImageRenderer(content: view.preferredColorScheme(.dark))
+            r.scale = 2
+            if let tiff = r.nsImage?.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                try? png.write(to: out.appendingPathComponent("\(name).png"))
+                print("wrote", name)
+            } else { print("fail", name) }
+        }
+
+        // Closed notch while an agent needs you (pet wing).
+        AgentStore.shared.refreshActivities()
+        render("closed-agent-alert", NotchModel(screenID: 0, notchSize: notch, hasPhysicalNotch: true))
+
+        // Agents tab in the Grid layout (restored afterwards so a local run keeps the user's choice).
+        let layout = AgentsFeature.settings.value.layout
+        AgentsFeature.settings.value.layout = .grid
+        let grid = NotchModel(screenID: 0, notchSize: notch, hasPhysicalNotch: true)
+        grid.mode = .agents
+        grid.isOpen = true
+        render("open-agents-grid", grid)
+        AgentsFeature.settings.value.layout = layout
+
+        let moods: [(String, PetMood)] = [("sleeping", .sleeping), ("idle", .idle), ("thinking", .thinking), ("working-edit", .working(.edit)),
+                                          ("working-command", .working(.command)), ("alert", .alert), ("celebrating", .celebrating), ("oops", .oops)]
+        save("pet-moods", HStack(spacing: 8) {
+            ForEach(moods.indices, id: \.self) { i in
+                VStack(spacing: 4) {
+                    PetView(mood: moods[i].1, size: 120, animated: false)
+                    Text(moods[i].0).font(Theme.caption).foregroundStyle(.white)
+                }
+            }
+        }.padding(16).background(.black))
+
+        for page in OnboardingPage.allCases {
+            save("onboarding-\(page.rawValue + 1)", OnboardingView(page: page) { _ in })
+        }
         print("snapshot: done")
     }
 }

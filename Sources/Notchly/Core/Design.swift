@@ -20,9 +20,48 @@ enum Theme {
     static let widgetRadius: CGFloat = 22
     static let contentPadding: CGFloat = 12          // generalSettings.contentPadding default
 
+    // Surfaces and strokes: a hairline lifts dark cards off the black panel without a visible border.
+    static let cardElevated = Color(white: 0.15)
+    static let hairline = Color.white.opacity(0.07)
+    static let hairlineStrong = Color.white.opacity(0.12)
+
+    // Semantic colors.
+    static let success = Color(nsColor: .systemGreen)
+    static let warning = Color(nsColor: .systemOrange)
+    static let danger = Color(nsColor: .systemRed)
+    static let info = Color(nsColor: .systemBlue)
+
+    // Claude brand palette (terracotta) used by the Agents tab and the pet.
+    static let claude = Color(hex: 0xD97757)
+    static let claudeLight = Color(hex: 0xEE9C7C)
+    static let claudeDeep = Color(hex: 0xB65A3B)
+
     static func title(_ size: CGFloat = 15) -> Font { .system(size: size, weight: .semibold) }
     static let body = Font.system(size: 13, weight: .medium)
     static let caption = Font.system(size: 11, weight: .medium)
+    static let micro = Font.system(size: 9.5, weight: .semibold)
+    static func mono(_ size: CGFloat = 11, weight: Font.Weight = .medium) -> Font { .system(size: size, weight: weight, design: .monospaced) }
+    static func rounded(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font { .system(size: size, weight: weight, design: .rounded) }
+}
+
+/// 4-pt spacing scale. Use these instead of literals so rhythm stays consistent across tabs.
+enum Space {
+    static let xxs: CGFloat = 2
+    static let xs: CGFloat = 4
+    static let s: CGFloat = 6
+    static let m: CGFloat = 8
+    static let l: CGFloat = 12
+    static let xl: CGFloat = 16
+    static let xxl: CGFloat = 24
+}
+
+/// Corner radius scale (continuous corners everywhere).
+enum Radius {
+    static let xs: CGFloat = 6
+    static let s: CGFloat = 9
+    static let m: CGFloat = 13
+    static let l: CGFloat = 17
+    static let card: CGFloat = Theme.widgetRadius
 }
 
 // Springs measured from NotchNook's NotchView.openAnimation / closeAnimation.
@@ -36,6 +75,15 @@ enum Motion {
         return .spring(response: 0.4, dampingFraction: 0.95).speed(speed)
     }
     static let snappy = Animation.spring(response: 0.3, dampingFraction: 0.85)
+    static let gentle = Animation.spring(response: 0.5, dampingFraction: 0.9)
+    static let bouncy = Animation.spring(response: 0.42, dampingFraction: 0.68)
+
+    static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    /// `animation`, or a short fade when the user asked for less motion.
+    static func respecting(_ animation: Animation) -> Animation {
+        reduceMotion ? .easeInOut(duration: 0.18) : animation
+    }
 }
 
 /// Notch body with rounded bottom corners and concave top "ears" that sit outside the body.
@@ -101,8 +149,19 @@ struct WidgetCard<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.widgetRadius, style: .continuous))
+            .cardSurface()
     }
+}
+
+extension View {
+    /// Standard notch card: dark fill, continuous corners, hairline edge.
+    func cardSurface(_ fill: Color = Theme.card, radius: CGFloat = Theme.widgetRadius, stroke: Color = Theme.hairline) -> some View {
+        background(fill, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(stroke, lineWidth: 0.5))
+    }
+
+    /// A light band that sweeps across the view while `active` (used for the step an agent is running).
+    func shimmer(_ active: Bool) -> some View { modifier(Shimmer(active: active)) }
 }
 
 /// Round icon button (generalSettings.preferRoundButtons = true).
@@ -153,6 +212,54 @@ struct PressableStyle: ButtonStyle {
     }
 }
 
+/// Primary capsule button: solid tint, brightens on hover, shrinks on press.
+struct FilledButtonStyle: ButtonStyle {
+    var tint: Color = .white
+    var foreground: Color = .black
+    var compact = false
+    func makeBody(configuration: Configuration) -> some View {
+        FilledButtonBody(configuration: configuration, tint: tint, foreground: foreground, compact: compact)
+    }
+
+    private struct FilledButtonBody: View {
+        let configuration: ButtonStyleConfiguration
+        let tint: Color
+        let foreground: Color
+        let compact: Bool
+        @State private var hovering = false
+        @Environment(\.isEnabled) private var enabled
+        var body: some View {
+            configuration.label
+                .font(.system(size: compact ? 11 : 12.5, weight: .semibold))
+                .foregroundStyle(foreground)
+                .padding(.horizontal, compact ? 10 : 14).padding(.vertical, compact ? 5 : 7.5)
+                .background(tint, in: Capsule())
+                .overlay(Capsule().fill(.white.opacity(hovering && !configuration.isPressed ? 0.12 : 0)))
+                .opacity(enabled ? 1 : 0.45)
+                .scaleEffect(configuration.isPressed ? 0.95 : 1)
+                .animation(Motion.snappy, value: configuration.isPressed)
+                .onHover { hovering = $0 }
+                .contentShape(Capsule())
+        }
+    }
+}
+
+/// Secondary capsule button on the dark panel.
+struct GhostButtonStyle: ButtonStyle {
+    var compact = false
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: compact ? 11 : 12.5, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.9))
+            .padding(.horizontal, compact ? 10 : 14).padding(.vertical, compact ? 5 : 7.5)
+            .background(Color.white.opacity(configuration.isPressed ? 0.16 : 0.09), in: Capsule())
+            .overlay(Capsule().strokeBorder(Theme.hairlineStrong, lineWidth: 0.5))
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .animation(Motion.snappy, value: configuration.isPressed)
+            .contentShape(Capsule())
+    }
+}
+
 /// Empty-state placeholder inside the notch.
 struct EmptyState: View {
     let symbol: String
@@ -165,6 +272,100 @@ struct EmptyState: View {
             if let subtitle { Text(subtitle).font(Theme.caption).foregroundStyle(Theme.tertiaryText).multilineTextAlignment(.center) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Colored status dot; `pulsing` adds a soft expanding ring (off under Reduce Motion).
+struct StatusDot: View {
+    let color: Color
+    var size: CGFloat = 7
+    var pulsing = false
+    var body: some View {
+        Circle().fill(color).frame(width: size, height: size)
+            .background {
+                if pulsing && !Motion.reduceMotion {
+                    Circle().fill(color)
+                        .phaseAnimator([false, true]) { ring, expanded in
+                            ring.scaleEffect(expanded ? 2.6 : 1).opacity(expanded ? 0 : 0.55)
+                        } animation: { expanded in expanded ? .easeOut(duration: 1.3) : .linear(duration: 0.01) }
+                }
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// Keyboard key, e.g. ⌃ ⌘ 1.
+struct KeyCap: View {
+    let label: String
+    var size: CGFloat = 13
+    var body: some View {
+        Text(label)
+            .font(.system(size: size, weight: .semibold, design: .rounded))
+            .foregroundStyle(.white.opacity(0.92))
+            .frame(minWidth: size * 2)
+            .padding(.horizontal, size * 0.45).padding(.vertical, size * 0.32)
+            .background(
+                RoundedRectangle(cornerRadius: size * 0.45, style: .continuous)
+                    .fill(LinearGradient(colors: [Color(white: 0.24), Color(white: 0.16)], startPoint: .top, endPoint: .bottom))
+                    .shadow(color: .black.opacity(0.5), radius: 0, y: size * 0.12)
+            )
+            .overlay(RoundedRectangle(cornerRadius: size * 0.45, style: .continuous).strokeBorder(Theme.hairlineStrong, lineWidth: 0.5))
+    }
+}
+
+/// Small uppercase label above a group of content.
+struct SectionLabel: View {
+    let text: String
+    var trailing: String? = nil
+    var body: some View {
+        HStack(spacing: Space.xs) {
+            Text(text.uppercased()).kerning(0.6)
+            Spacer(minLength: 0)
+            if let trailing { Text(trailing).monospacedDigit() }
+        }
+        .font(Theme.micro)
+        .foregroundStyle(Theme.tertiaryText)
+    }
+}
+
+private struct Shimmer: ViewModifier {
+    let active: Bool
+    @State private var phase: CGFloat = -1
+    func body(content: Content) -> some View {
+        if active && !Motion.reduceMotion {
+            content
+                .overlay {
+                    GeometryReader { geo in
+                        LinearGradient(colors: [.clear, .white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: geo.size.width * 0.5)
+                            .offset(x: phase * geo.size.width * 1.5)
+                    }
+                    .mask(content)
+                    .allowsHitTesting(false)
+                }
+                .onAppear {
+                    phase = -1
+                    withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) { phase = 1 }
+                }
+        } else {
+            content
+        }
+    }
+}
+
+/// Four-point spark used in illustrations and by the pet's antenna.
+struct SparkShape: Shape {
+    var pinch: CGFloat = 0.28
+    func path(in rect: CGRect) -> Path {
+        let c = CGPoint(x: rect.midX, y: rect.midY), rx = rect.width / 2, ry = rect.height / 2
+        var p = Path()
+        p.move(to: CGPoint(x: c.x, y: c.y - ry))
+        p.addQuadCurve(to: CGPoint(x: c.x + rx, y: c.y), control: CGPoint(x: c.x + rx * pinch, y: c.y - ry * pinch))
+        p.addQuadCurve(to: CGPoint(x: c.x, y: c.y + ry), control: CGPoint(x: c.x + rx * pinch, y: c.y + ry * pinch))
+        p.addQuadCurve(to: CGPoint(x: c.x - rx, y: c.y), control: CGPoint(x: c.x - rx * pinch, y: c.y + ry * pinch))
+        p.addQuadCurve(to: CGPoint(x: c.x, y: c.y - ry), control: CGPoint(x: c.x - rx * pinch, y: c.y - ry * pinch))
+        p.closeSubpath()
+        return p
     }
 }
 

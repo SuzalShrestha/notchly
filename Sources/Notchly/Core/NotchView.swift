@@ -86,26 +86,40 @@ private struct TopBar: View {
 /// Tab switcher (NavigationDockSurface, styles compact / icons / dots).
 private struct NavigationDock: View {
     let model: NotchModel
+    @Namespace private var ns
+
     var body: some View {
         let style = Settings.general.value.navigationDockStyle
         let modes = NotchMode.allCases.filter { !Settings.general.value.hiddenModes.contains($0) }
+        let agentAlert = AgentStore.shared.needsAttention
         HStack(spacing: style == .dots ? 6 : 2) {
             ForEach(modes) { mode in
                 let selected = model.mode == mode
+                let badge = mode == .agents && agentAlert && !selected
                 Button { model.select(mode) } label: {
                     if style == .dots {
-                        Circle().fill(.white.opacity(selected ? 0.95 : 0.3)).frame(width: 6, height: 6)
+                        Circle().fill(badge ? Theme.warning : .white.opacity(selected ? 0.95 : 0.3)).frame(width: 6, height: 6)
                             .frame(width: 12, height: 20)
                     } else {
                         Image(systemName: mode.symbol)
                             .font(.system(size: 11.5, weight: .semibold))
                             .foregroundStyle(.white.opacity(selected ? 1 : 0.45))
                             .frame(width: 28, height: 22)
-                            .background(selected && style == .compact ? Theme.chipHover : .clear, in: Capsule())
+                            .background {
+                                // One pill that slides between tabs instead of a fade per tab.
+                                if selected && style == .compact {
+                                    Capsule().fill(Theme.chipHover).matchedGeometryEffect(id: "selection", in: ns)
+                                }
+                            }
+                            .overlay(alignment: .topTrailing) {
+                                if badge { StatusDot(color: Theme.warning, size: 6, pulsing: true).offset(x: -3, y: 2) }
+                            }
                     }
                 }
                 .buttonStyle(PressableStyle())
                 .help("\(mode.title)  ⌘⌃\(mode.shortcutDigit)")
+                .accessibilityLabel(badge ? "\(mode.title), needs your attention" : mode.title)
+                .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
         .padding(2)
