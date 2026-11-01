@@ -51,8 +51,8 @@ struct PetView: View {
 
     var body: some View {
         let still = !animated || Motion.reduceMotion
-        // Tiny pets in the closed notch tick slower; nobody can see 30 fps at 22 pt.
-        let rate: Double = size < 34 ? 1.0 / 20 : 1.0 / 30
+        // Tiny pets in the closed notch tick slower (nobody can see 30 fps at 24 pt), and a sleeping pet barely moves.
+        let rate: Double = mood == .sleeping ? 1.0 / 12 : (size < 34 ? 1.0 / 20 : 1.0 / 30)
         TimelineView(.animation(minimumInterval: rate, paused: still)) { ctx in
             let t = still ? 0.6 : ctx.date.timeIntervalSinceReferenceDate
             Canvas { g, sz in PetPainter(mood: mood, t: t, detail: size >= 34).draw(&g, sz) }
