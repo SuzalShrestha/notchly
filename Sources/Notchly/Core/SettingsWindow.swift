@@ -106,15 +106,18 @@ private struct GeneralPane: View {
         SettingsPane(title: "General") {
             if !dismissedWelcome {
                 SettingsCard {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "hand.wave.fill").font(.system(size: 20)).foregroundStyle(.orange)
+                    HStack(alignment: .center, spacing: 14) {
+                        PetView(mood: .idle, size: 54)
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Welcome to Notchly").font(.headline)
-                            Text("Point at the notch at the top of your screen to open it, or press ⌃⌘1 to ⌃⌘7 to jump to a tab. Notchly lives in the menu bar; open it again from Applications to come back here. To follow Claude Code sessions, see Agents & AI Usage.")
+                            Text("Point at the notch to open it, or press ⌃⌘1 to ⌃⌘7 to jump to a tab. The two-minute tour sets up your Nook and connects Claude Code.")
                                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer(minLength: 8)
-                        Button("Got It") { withAnimation { dismissedWelcome = true } }
+                        VStack(alignment: .trailing, spacing: 6) {
+                            Button("Take the Tour") { AppDelegate.shared?.showOnboarding() }.buttonStyle(.borderedProminent)
+                            Button("Dismiss") { withAnimation { dismissedWelcome = true } }.buttonStyle(.link)
+                        }
                     }
                     .padding(.vertical, 10)
                 }
@@ -299,6 +302,10 @@ private struct AboutPane: View {
                 SettingsRow(title: "Source code") { Link("github.com/\(AppInfo.repository)", destination: AppInfo.sourceCode) }
                 Divider()
                 SettingsRow(title: "Found a bug or have an idea?") { Link("Open an issue", destination: AppInfo.newIssue) }
+                Divider()
+                SettingsRow(title: "Welcome tour", subtitle: "Walk through the basics again.") {
+                    Button("Show Tour…") { AppDelegate.shared?.showOnboarding() }
+                }
             }
             SettingsCard(title: "Your data") {
                 SettingsRow(title: "Data folder", subtitle: DataFile.folder.path) {

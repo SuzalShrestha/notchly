@@ -37,6 +37,9 @@ enum NotchMode: String, CaseIterable, Codable, Identifiable {
         }
     }
 
+    /// Widest tab; computed once instead of on every layout pass.
+    static let maxContentWidth: CGFloat = allCases.map(\.contentSize.width).max() ?? 680
+
     /// Content area size below the top bar (inferred from widget mock proportions).
     var contentSize: CGSize {
         switch self {
@@ -81,7 +84,7 @@ final class NotchModel {
         if isOpen {
             let pad = Settings.general.value.contentPadding
             // One width for every tab so the navigation dock never moves under the pointer.
-            let width = NotchMode.allCases.map(\.contentSize.width).max()! + pad * 2
+            let width = NotchMode.maxContentWidth + pad * 2
             return CGSize(width: max(width, notchSize.width + 260), height: topBarHeight + mode.contentSize.height + pad * 2)
         }
         if let a = LiveActivityCenter.shared.current {

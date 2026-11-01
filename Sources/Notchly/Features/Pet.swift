@@ -152,7 +152,7 @@ private struct PetPainter {
                                                startPoint: CGPoint(x: bodyRect.midX, y: bodyRect.minY),
                                                endPoint: CGPoint(x: bodyRect.midX, y: bodyRect.maxY)))
         // Belly highlight and a rim light along the top edge.
-        g.fill(Path(ellipseIn: R(cx - 0.17, by + bh * 0.55, 0.34, bh * 0.38)), with: .color(belly.opacity(0.38)))
+        g.fill(Path(ellipseIn: R(cx - 0.17, by + bh * 0.55, 0.34, bh * 0.38)), with: .color(belly.opacity(0.3)))
         var rim = Path()
         rim.addArc(center: P(cx, by + 0.24), radius: 0.215 * s, startAngle: .degrees(205), endAngle: .degrees(255), clockwise: false)
         g.stroke(rim, with: .color(.white.opacity(0.35)), style: StrokeStyle(lineWidth: 0.018 * s, lineCap: .round))
@@ -273,7 +273,8 @@ private struct PetPainter {
             }
         }
         if big {
-            for (c, dir) in [(left, -1.0), (right, 1.0)] {
+            // Inner ends raised: attentive, not cross.
+            for (c, dir) in [(left, 1.0), (right, -1.0)] {
                 var brow = Path()
                 brow.move(to: CGPoint(x: c.x - 0.035 * s, y: c.y - 0.095 * s + dir * 0.008 * s))
                 brow.addLine(to: CGPoint(x: c.x + 0.035 * s, y: c.y - 0.095 * s - dir * 0.008 * s))

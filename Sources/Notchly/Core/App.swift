@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static private(set) weak var shared: AppDelegate?
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
+    private var onboardingWindow: NSWindow?
     private var hotKeys: [EventHotKeyRef] = []
     private var hotKeyHandlerInstalled = false
 
@@ -39,10 +40,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotchManager.shared.start()
         setUpStatusItem()
         updateHotKeys()
-        // First launch: an agent app has no Dock icon or window, so show Settings with the welcome card.
-        if !UserDefaults.standard.bool(forKey: "didShowWelcome") {
+        // First launch: an agent app has no Dock icon or window, so greet with the welcome tour.
+        if !UserDefaults.standard.bool(forKey: "didShowWelcome") || CommandLine.arguments.contains("--onboarding") {
             UserDefaults.standard.set(true, forKey: "didShowWelcome")
-            showSettings()
+            showOnboarding()
         }
         // Escape in a notch text field ends editing; a second Escape closes the open notch.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -82,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
         menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Welcome Tour…", action: #selector(showOnboarding), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Notchly Website", action: #selector(openWebsite), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Report an Issue…", action: #selector(reportIssue), keyEquivalent: "").target = self
@@ -113,6 +115,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc func showOnboarding() {
+        if onboardingWindow == nil {
+            let w = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 720, height: 600),
+                             styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+            w.titlebarAppearsTransparent = true
+            w.titleVisibility = .hidden
+            w.isMovableByWindowBackground = true
+            w.isReleasedWhenClosed = false
+            w.backgroundColor = .black
+            w.title = "Welcome to Notchly"
+            w.contentView = NSHostingView(rootView: OnboardingView { [weak self] openNotch in self?.finishOnboarding(openNotch: openNotch) })
+            w.center()
+            onboardingWindow = w
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        onboardingWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    private func finishOnboarding(openNotch: Bool) {
+        onboardingWindow?.close()
+        // Drop the window after this action returns, so the tour starts fresh next time.
+        DispatchQueue.main.async { self.onboardingWindow = nil }
+        if openNotch {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { NotchManager.shared.activeController?.model.open(.nook) }
+        }
     }
 
     // MARK: Navigation shortcuts ⌘⌃1…7 (NotchNook: modifiers = 9 → command + control, inferred)

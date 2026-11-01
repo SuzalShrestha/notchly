@@ -341,7 +341,7 @@ final class AgentStore {
         ), duration: 4)
     }
 
-    private func refreshActivities() {
+    func refreshActivities() {
         let set = AgentsFeature.settings.value
         let center = LiveActivityCenter.shared
         let attention = set.notifyAttention && needsAttention
