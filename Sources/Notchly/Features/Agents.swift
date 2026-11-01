@@ -248,6 +248,8 @@ extension AgentsSettings {
 @MainActor @Observable
 final class AgentStore {
     static let shared = AgentStore()
+    /// Oldest finished sessions are dropped beyond this, so a flood of fake session IDs cannot grow memory.
+    static let maxSessions = 32
     private(set) var sessions: [String: AgentSession] = [:]
     var listening = false
     /// Session shown in the Focus layout; nil follows the one that needs you, else the newest.
@@ -275,6 +277,12 @@ final class AgentStore {
     func receive(_ data: Data) {
         guard AgentsFeature.settings.value.enabled, let e = HookEvent(json: data) else { return }
         if e.kind == .end { dismiss(e.sessionID); return }
+        if sessions[e.sessionID] == nil, sessions.count >= Self.maxSessions,
+           let oldest = sessions.values.filter({ !$0.phase.isBusy && !$0.phase.needsAttention }).min(by: { $0.updatedAt < $1.updatedAt })
+            ?? sessions.values.min(by: { $0.updatedAt < $1.updatedAt }) {
+            sessions[oldest.id] = nil
+            if selectedID == oldest.id { selectedID = nil }
+        }
         var s = sessions[e.sessionID] ?? AgentSession(id: e.sessionID, cwd: e.cwd)
         let wasAttention = s.phase.needsAttention
         if !e.cwd.isEmpty { s.cwd = e.cwd }
@@ -435,31 +443,67 @@ enum AgentBridgeServer {
         }
         guard bound == 0, listen(fd, 16) == 0 else { close(fd); return false }
         chmod(path, 0o600)
+        // Connections are read in parallel (a slow client must not hold up Claude's hooks), at most 8 at a time.
+        let slots = DispatchSemaphore(value: 8)
+        let workers = DispatchQueue(label: "notchly.agents.bridge", attributes: .concurrent)
         Thread.detachNewThread {
             while true {
                 let c = accept(fd, nil, nil)
-                if c < 0 { if errno == EINTR { continue } else { break } }
-                if let data = readPayload(c) { onPayload(data) }
-                close(c)
+                if c < 0 { if errno == EINTR || errno == ECONNABORTED { continue } else { break } }
+                // Only our own user: the 0600 mode already says so, this also holds if the mode is ever loosened.
+                var uid = uid_t(), gid = gid_t()
+                guard getpeereid(c, &uid, &gid) == 0, uid == getuid() else { close(c); continue }
+                slots.wait()
+                workers.async {
+                    if let data = readPayload(c) { onPayload(data) }
+                    close(c)
+                    slots.signal()
+                }
             }
         }
         return true
     }
 
-    /// Reads until EOF or until the bytes form one complete JSON object (nc keeps the socket open until we close).
+    static let maxPayload = 16 << 20
+
+    /// Reads until EOF or until one complete JSON object has arrived (nc keeps the socket open until we close).
     private static func readPayload(_ c: Int32) -> Data? {
         var tv = timeval(tv_sec: 2, tv_usec: 0)
         setsockopt(c, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
         var data = Data()
+        var scan = JSONObjectEnd()
         var buf = [UInt8](repeating: 0, count: 65536)
-        while data.count < 16 << 20 {
+        while data.count < maxPayload {
             let n = read(c, &buf, buf.count)
             if n <= 0 { break }
             data.append(buf, count: n)
-            if let last = data.last(where: { !($0 == 10 || $0 == 13 || $0 == 32) }), last == UInt8(ascii: "}"),
-               (try? JSONSerialization.jsonObject(with: data)) != nil { break }
+            if scan.feed(buf[0..<n]) { break }
         }
-        return data.isEmpty ? nil : data
+        return data.isEmpty || data.count > maxPayload ? nil : data
+    }
+}
+
+/// Finds where a top-level JSON object ends in one pass over the bytes, without parsing them again per chunk.
+struct JSONObjectEnd {
+    private var depth = 0, started = false, inString = false, escaped = false
+
+    /// Feeds the next bytes; true once the outermost `{…}` has closed.
+    mutating func feed<S: Sequence>(_ bytes: S) -> Bool where S.Element == UInt8 {
+        for b in bytes {
+            if inString {
+                if escaped { escaped = false } else if b == UInt8(ascii: "\\") { escaped = true } else if b == UInt8(ascii: "\"") { inString = false }
+                continue
+            }
+            switch b {
+            case UInt8(ascii: "\""): inString = true
+            case UInt8(ascii: "{"), UInt8(ascii: "["): depth += 1; started = true
+            case UInt8(ascii: "}"), UInt8(ascii: "]"):
+                depth -= 1
+                if started && depth <= 0 { return true }
+            default: break
+            }
+        }
+        return false
     }
 }
 
@@ -470,11 +514,14 @@ enum HookInstaller {
     static let marker = "notchly-hook.sh"
     static var settingsURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/settings.json") }
     static var scriptURL: URL { DataFile.folder.appendingPathComponent(marker) }
-    static var command: String { "'\(scriptURL.path)'" }
+    static var command: String { shellQuoted(scriptURL.path) }
+
+    /// One POSIX shell word: single quotes, with any `'` inside written as `'\''`.
+    static func shellQuoted(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 
     static func script(socket: String) -> String {
         "#!/bin/sh\n# Notchly: forwards Claude Code hook events to the notch. Never blocks Claude.\n"
-            + "/usr/bin/nc -U -w 1 '\(socket)' >/dev/null 2>&1\nexit 0\n"
+            + "/usr/bin/nc -U -w 1 \(shellQuoted(socket)) >/dev/null 2>&1\nexit 0\n"
     }
 
     /// Removes our entries from every event, then (if `add`) appends one group per event. nil = malformed hooks.
@@ -512,8 +559,10 @@ enum HookInstaller {
         }
     }
 
-    static func loadSettings() throws -> [String: Any] {
-        guard let data = try? Data(contentsOf: settingsURL) else { return [:] }
+    static func loadSettings() throws -> [String: Any] { try parse(try? Data(contentsOf: settingsURL)) }
+
+    private static func parse(_ data: Data?) throws -> [String: Any] {
+        guard let data else { return [:] }
         guard let o = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw NSError(domain: "Notchly", code: 1, userInfo: [NSLocalizedDescriptionKey: "settings.json is not a JSON object"])
         }
@@ -522,20 +571,29 @@ enum HookInstaller {
 
     static func apply(add: Bool) throws {
         let fm = FileManager.default
-        guard let root = merged(try loadSettings(), add: add) else {
+        // Write through a symlinked settings.json (dotfile repos) instead of replacing the link with a file.
+        let target = settingsURL.resolvingSymlinksInPath()
+        let before = try? Data(contentsOf: target)
+        guard let root = merged(try parse(before), add: add) else {
             throw NSError(domain: "Notchly", code: 2, userInfo: [NSLocalizedDescriptionKey: "settings.json has an unexpected \"hooks\" layout; not changed"])
         }
-        try fm.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if fm.fileExists(atPath: settingsURL.path) {
-            let backup = settingsURL.appendingPathExtension("notchly-backup")
-            if !fm.fileExists(atPath: backup.path) { try fm.copyItem(at: settingsURL, to: backup) }
-        }
+        try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // The first backup is kept as is: it is the file from before Notchly ever touched it.
+        let backup = settingsURL.appendingPathExtension("notchly-backup")
+        if before != nil, !fm.fileExists(atPath: backup.path) { try fm.copyItem(at: target, to: backup) }
         if add {
             try script(socket: AgentBridgeServer.socketPath).write(to: scriptURL, atomically: true, encoding: .utf8)
-            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+            try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scriptURL.path)
         }
         let out = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-        try out.write(to: settingsURL, options: .atomic)
+        // settings.json can hold API keys under "env": keep its mode (owner-only when new), not the umask default.
+        let mode = (try? fm.attributesOfItem(atPath: target.path))?[.posixPermissions] as? NSNumber ?? 0o600
+        // Claude Code may have saved the file since we read it; do not overwrite that change.
+        guard (try? Data(contentsOf: target)) == before else {
+            throw NSError(domain: "Notchly", code: 3, userInfo: [NSLocalizedDescriptionKey: "settings.json changed while updating; try again"])
+        }
+        try out.write(to: target, options: .atomic)
+        try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: target.path)
     }
 }
 
@@ -612,8 +670,17 @@ enum AgentsFeature {
         assert(NSDictionary(dictionary: removed).isEqual(to: foreign))
         assert(HookInstaller.merged(["hooks": "bad"], add: true) == nil)
 
-        // End to end: generated hook script → nc → socket server.
-        let sock = NSTemporaryDirectory() + "notchly-test-\(getpid()).sock"
+        // Shell quoting survives a quote in the path; the payload scanner ignores braces inside strings.
+        assert(HookInstaller.shellQuoted("/a b/it's") == #"'/a b/it'\''s'"#)
+        func ends(_ chunks: [String]) -> Int? {
+            var scan = JSONObjectEnd()
+            return chunks.firstIndex { scan.feed(Array($0.utf8)) }
+        }
+        assert(ends([#"{"a":"}{\"}"#, #"","b":{"c":[1,{}]}"#, "}\n"]) == 2)
+        assert(ends([#"{"a":"x"#, "y\"}"]) == 1 && ends([#"{"a":1"#]) == nil && ends(["  \n{}"]) == 0)
+
+        // End to end: generated hook script → nc → socket server (a quote in the path checks the quoting).
+        let sock = NSTemporaryDirectory() + "notchly-test-'q-\(getpid()).sock"
         let got = DispatchSemaphore(value: 0)
         final class Box: @unchecked Sendable { var data = Data() }
         let received = Box()

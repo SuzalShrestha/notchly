@@ -48,8 +48,15 @@ On a Mac without a notch, or on an external display, Notchly shows a thin handle
 3. The build is ad-hoc signed, not notarized. On first launch, open System Settings › Privacy & Security and click
    **Open Anyway**, or run `xattr -dr com.apple.quarantine /Applications/Notchly.app`.
 
-Needs macOS 14 or later on Apple silicon. Each release has a `Notchly.zip.sha256` file; check it with
-`shasum -a 256 -c Notchly.zip.sha256`.
+Needs macOS 14 or later on Apple silicon. Before you allow it, check that the zip was built from this repository by its
+release workflow (needs the [GitHub CLI](https://cli.github.com)):
+
+```bash
+gh attestation verify Notchly.zip --repo SuzalShrestha/notchly
+```
+
+Each release also has a `Notchly.zip.sha256` file. It catches a broken download but, sitting next to the zip, cannot
+prove who built it: `shasum -a 256 -c Notchly.zip.sha256`.
 
 Notchly lives in the menu bar (no Dock icon). Open it again from Applications at any time to bring up Settings.
 To update, use **Check for Updates…** in the menu bar menu, then replace the app in Applications.

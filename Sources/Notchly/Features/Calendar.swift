@@ -37,12 +37,20 @@ enum VideoConferenceService: String, CaseIterable {
         else { return nil }
     }
 
+    /// Invites come from anyone, so a Join link must be web or a meeting app, never `file:`, `smb:` and the like.
+    static let allowedSchemes: Set<String> = ["https", "zoommtg", "zoomus", "msteams"]
+
     /// First conference link found in the texts (event URL, location, notes).
     static func detect(in texts: [String?]) -> (VideoConferenceService, URL)? {
         guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return nil }
         for text in texts.compactMap({ $0 }) {
             for match in detector.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
-                if let url = match.url, let host = url.host, let service = VideoConferenceService(host: host) { return (service, url) }
+                guard var url = match.url, let host = url.host, let service = VideoConferenceService(host: host) else { continue }
+                if url.scheme?.lowercased() == "http", var c = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                    c.scheme = "https"
+                    url = c.url ?? url
+                }
+                if allowedSchemes.contains(url.scheme?.lowercased() ?? "") { return (service, url) }
             }
         }
         return nil
@@ -190,6 +198,8 @@ enum CalendarFeature {
         precondition(VideoConferenceService.detect(in: ["<https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%40thread.v2/0>"])?.0 == .microsoftTeams)
         precondition(VideoConferenceService.detect(in: ["https://acme.webex.com/meet/bob"])?.0 == .webex)
         precondition(VideoConferenceService.detect(in: ["https://example.com/zoom.us", "no link"]) == nil)
+        precondition(VideoConferenceService.detect(in: ["file://zoom.us/Applications/Calculator.app", "smb://meet.google.com/x"]) == nil)
+        precondition(VideoConferenceService.detect(in: ["http://zoom.us/j/1"])?.1.absoluteString == "https://zoom.us/j/1")
         let t0 = Date(timeIntervalSince1970: 1_000_000)
         precondition(countdown(to: t0.addingTimeInterval(250), now: t0) == "in 5m")
         precondition(countdown(to: t0.addingTimeInterval(20), now: t0) == "in 1m")

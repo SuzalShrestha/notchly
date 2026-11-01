@@ -91,7 +91,8 @@ enum AIUsageScanner {
             guard let v = try? url.resourceValues(forKeys: Set(keys)), let mod = v.contentModificationDate, mod >= since else { continue }
             let size = v.fileSize ?? 0
             if let c = cache[url.path], c.modified == mod, c.size == size { all += c.entries; continue }
-            guard let data = try? Data(contentsOf: url, options: .alwaysMapped) else { continue }
+            // Read, not mapped: Claude rewrites transcripts, and a mapped file that shrinks under us crashes (SIGBUS).
+            guard let data = try? Data(contentsOf: url) else { continue }
             let found = entries(in: data, provider: provider, since: since)
             cache[url.path] = FileScan(modified: mod, size: size, entries: found)
             all += found

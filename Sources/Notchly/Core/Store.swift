@@ -32,9 +32,20 @@ enum DataFile {
     static let folder: URL = {
         let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Notchly", isDirectory: true)
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        let fm = FileManager.default
+        try? fm.createDirectory(at: url, withIntermediateDirectories: true)
+        // Owner only: clipboard history, notes and the agent socket live here (also tightens older installs).
+        try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
         return url
     }()
+
+    /// Keeps `url` out of Time Machine. Set it again after an atomic write, which replaces the file.
+    static func excludeFromBackup(_ url: URL) {
+        var url = url
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? url.setResourceValues(values)
+    }
 
     static func load<T: Decodable>(_ name: String, as type: T.Type) -> T? {
         let url = folder.appendingPathComponent(name)
@@ -45,9 +56,12 @@ enum DataFile {
         return nil
     }
 
-    static func save<T: Encodable>(_ value: T, to name: String) {
+    static func save<T: Encodable>(_ value: T, to name: String, excludeFromBackup exclude: Bool = false) {
         guard let data = try? JSONEncoder().encode(value) else { return }
-        try? data.write(to: folder.appendingPathComponent(name), options: .atomic)
+        let url = folder.appendingPathComponent(name)
+        guard (try? data.write(to: url, options: .atomic)) != nil else { return }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        if exclude { excludeFromBackup(url) }
     }
 }
 
@@ -76,7 +90,8 @@ struct GeneralSettings: Codable, Equatable {
     var preventUnhoverCloseWhenTyping = true
     var hoverOpenDelay: Double = 0.05
     var navigationShortcutsEnabled = true
-    var showNotchInScreenshots = true
+    /// Off by default: an open notch can show clipboard history, events and agent prompts during a screen share.
+    var showNotchInScreenshots = false
     var hiddenModes: [NotchMode] = []
 }
 
