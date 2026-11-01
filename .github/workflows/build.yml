@@ -33,7 +33,7 @@ jobs:
         run: swift build && .build/debug/Notchly --selftest
       - name: Snapshots
         run: build/Notchly.app/Contents/MacOS/Notchly --snapshot build/snapshots
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: snapshots, path: build/snapshots }
       - name: Zip
         run: |
@@ -44,7 +44,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with: { subject-path: Notchly.zip }
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: Notchly, path: 'Notchly.zip*' }
 
   release:
