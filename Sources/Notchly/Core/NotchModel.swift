@@ -46,7 +46,7 @@ enum NotchMode: String, CaseIterable, Codable, Identifiable {
         case .tray: CGSize(width: 620, height: 150)
         case .prompter: CGSize(width: 600, height: 190)
         case .clipboard: CGSize(width: 760, height: 190)
-        case .agents: CGSize(width: 620, height: 210)
+        case .agents: CGSize(width: 680, height: 220)
         }
     }
 }
