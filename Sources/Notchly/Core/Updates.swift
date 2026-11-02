@@ -148,15 +148,16 @@ enum Updates {
         guard let zipURL = r.asset("Notchly.zip"), let sumURL = r.asset("Notchly.zip.sha256"),
               let (sumData, sumResp) = try? await URLSession.shared.data(for: request(sumURL)), ok(sumResp),
               let want = digest(in: String(decoding: sumData, as: UTF8.self)),
-              let (zip, zipResp) = try? await URLSession.shared.download(for: request(zipURL)), ok(zipResp),
-              let data = try? Data(contentsOf: zip),
+              let (data, zipResp) = try? await URLSession.shared.data(for: request(zipURL)), ok(zipResp),
               SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == want else { return nil }
         let fm = FileManager.default
         let dir = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Notchly-Update", isDirectory: true)
         try? fm.removeItem(at: dir)
-        guard (try? fm.createDirectory(at: dir, withIntermediateDirectories: true)) != nil else { return nil }
-        let app = dir.appendingPathComponent("Notchly.app")
+        let zip = dir.appendingPathComponent("Notchly.zip"), app = dir.appendingPathComponent("Notchly.app")
+        guard (try? fm.createDirectory(at: dir, withIntermediateDirectories: true)) != nil,
+              (try? data.write(to: zip)) != nil else { return nil }
         let unpacked = await Task.detached { run("/usr/bin/ditto", ["-x", "-k", zip.path, dir.path]) }.value
+        try? fm.removeItem(at: zip)
         guard unpacked, let b = Bundle(url: app), b.bundleIdentifier == Bundle.main.bundleIdentifier,
               (b.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) == r.version else { return nil }
         let signed = await Task.detached { run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path]) }.value

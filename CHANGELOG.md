@@ -4,6 +4,10 @@ All notable changes to Notchly. Versions follow [semantic versioning](https://se
 
 ## Unreleased
 
+### Fixed
+
+- Updates no longer leave the downloaded zip (about 1.5 MB) in the temp folder; it is deleted after it is unpacked.
+
 ## 1.2.1 — 2026-11-02
 
 ### Fixed
