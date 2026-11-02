@@ -51,8 +51,12 @@ enum DataFile {
         let url = folder.appendingPathComponent(name)
         guard let data = try? Data(contentsOf: url) else { return nil }
         if let value = try? JSONDecoder().decode(T.self, from: data) { return value }
-        // Keep the unreadable file so a later save cannot destroy it.
-        try? data.write(to: url.appendingPathExtension("undecodable-\(Int(Date().timeIntervalSince1970))"))
+        // Keep the unreadable file so a later save cannot destroy it, with the same mode and backup rule as saves.
+        // ponytail: copies are never pruned; add an age-based cleanup if decode failures ever become common.
+        let copy = url.appendingPathExtension("undecodable-\(Int(Date().timeIntervalSince1970))")
+        guard (try? data.write(to: copy)) != nil else { return nil }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: copy.path)
+        excludeFromBackup(copy)
         return nil
     }
 
