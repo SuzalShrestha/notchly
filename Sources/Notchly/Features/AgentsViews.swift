@@ -2,8 +2,8 @@ import SwiftUI
 
 // MARK: - Agents tab
 //
-// Focus (default): a pet hero card plus one session in depth (header, attention banner,
-// step timeline with durations, tool mix). Grid / List: compact cards for every session.
+// Focus (default): a mascot hero card plus one session in depth (header, attention banner,
+// the agent's plan and its steps as a checklist in plain words). Grid / List: compact cards for every session.
 
 struct AgentsView: View {
     var body: some View {
@@ -93,7 +93,7 @@ private struct AgentHeroCard: View {
             let mood = AgentStore.mood([session], at: ctx.date)
             VStack(spacing: Space.xs) {
                 if AgentsFeature.settings.value.showPet {
-                    PetView(mood: mood, size: 92).padding(.top, -6)
+                    PetView(mood: mood, harness: session.harness, size: 92).padding(.top, -6)
                 } else {
                     Image(systemName: "asterisk").font(.system(size: 34, weight: .bold)).foregroundStyle(Theme.claude)
                         .frame(height: 86)
@@ -106,7 +106,7 @@ private struct AgentHeroCard: View {
                     .frame(maxWidth: .infinity)
                 Spacer(minLength: 0)
                 HStack(spacing: Space.xs) {
-                    Stat(value: "\(session.toolCount)", label: "tools")
+                    Stat(value: "\(session.toolCount)", label: "steps")
                     Stat(value: "\(session.files.count)", label: "files")
                     Stat(value: AgentFormat.clock(session.elapsed(at: ctx.date)), label: "time")
                 }
@@ -125,10 +125,10 @@ private struct AgentHeroCard: View {
     private func subtitle(_ mood: PetMood, now: Date) -> String {
         switch mood {
         case .working: return session.runningStep?.title ?? session.currentLine
-        case .thinking: return "Planning the next step"
+        case .thinking: return "\(AgentFormat.musing(at: now))\u{2026}"
         case .alert: return session.phase == .needsPermission ? "Waiting for your OK" : "Waiting for your reply"
         case .celebrating: return "Finished in \(AgentFormat.clock(session.elapsed(at: now)))"
-        case .oops: return "A tool failed; Claude is adjusting"
+        case .oops: return "A step went wrong; \(session.harness.short) is trying another way"
         case .idle: return total > 1 ? "\(total) sessions open" : "Ready for your next prompt"
         case .sleeping: return "Dozing until you're back"
         }
@@ -201,8 +201,8 @@ private struct SessionDetailCard: View {
                 AttentionBanner(session: session)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            StepTimeline(session: session)
-            ToolMix(session: session)
+            ActivityList(session: session)
+            TurnSummary(session: session)
         }
         .animation(Motion.respecting(Motion.snappy), value: session.phase)
         .padding(12)
@@ -215,8 +215,11 @@ private struct SessionDetailCard: View {
         HStack(alignment: .top, spacing: Space.m) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
-                    Image(systemName: "folder.fill").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.claude)
+                    Image(systemName: "folder.fill").font(.system(size: 10, weight: .semibold)).foregroundStyle(session.harness.tint)
                     Text(session.project).font(Theme.title(13)).lineLimit(1)
+                    Text(session.harness.short).font(Theme.micro).foregroundStyle(session.harness.tint)
+                        .padding(.horizontal, 5).padding(.vertical, 1.5)
+                        .background(session.harness.tint.opacity(0.14), in: Capsule())
                     if session.turns > 1 {
                         Text("turn \(session.turns)").font(Theme.micro).foregroundStyle(Theme.tertiaryText)
                             .padding(.horizontal, 5).padding(.vertical, 1.5)
@@ -246,8 +249,8 @@ private struct AttentionBanner: View {
                 .font(.system(size: 12, weight: .bold)).foregroundStyle(.black)
                 .frame(width: 26, height: 26).background(Theme.warning, in: Circle())
             VStack(alignment: .leading, spacing: 1) {
-                Text(permission ? "Permission needed" : "Waiting for you").font(Theme.title(12)).foregroundStyle(Theme.warning)
-                Text(session.message.isEmpty ? "Claude is waiting for your input" : session.message)
+                Text(permission ? "Needs your OK" : "Waiting for you").font(Theme.title(12)).foregroundStyle(Theme.warning)
+                Text(session.attentionLine)
                     .font(Theme.caption).foregroundStyle(.white.opacity(0.82)).lineLimit(2)
             }
             Spacer(minLength: Space.s)
@@ -261,27 +264,36 @@ private struct AttentionBanner: View {
     }
 }
 
-/// Newest step first, connected by a rail. Durations tick live for the running step only.
-private struct StepTimeline: View {
+/// The agent's own plan (when it keeps one), then its steps newest first, each with a
+/// checkbox, spinner or cross. Words, not tool names: "Reading Design.swift", "Running tests".
+private struct ActivityList: View {
     let session: AgentSession
 
     var body: some View {
+        let plan = session.visiblePlan
         let steps = Array(session.steps.reversed())
-        if steps.isEmpty {
+        if plan.isEmpty && steps.isEmpty {
             HStack(spacing: Space.m) {
-                ProgressView().controlSize(.small)
-                Text(session.phase.isBusy ? "Reading your prompt…" : "No tool calls this turn")
-                    .font(Theme.caption).foregroundStyle(Theme.tertiaryText)
+                if session.phase.isBusy { Spinner(tint: session.harness.tint) }
+                TimelineView(.periodic(from: .now, by: 3)) { ctx in
+                    Text(session.phase.isBusy ? "\(AgentFormat.musing(at: ctx.date))\u{2026}" : "Nothing done yet this turn")
+                }
+                .font(Theme.caption).foregroundStyle(Theme.tertiaryText)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(steps) { step in StepRow(step: step, cwd: session.cwd) }
-                }
-                .background(alignment: .leading) {
-                    Rectangle().fill(Theme.hairlineStrong).frame(width: 1)
-                        .padding(.vertical, 12).padding(.leading, 9.5)
+                    if !plan.isEmpty {
+                        SectionLabel(text: "Plan", trailing: "\(plan.filter { $0.status == .completed }.count) of \(plan.count) done")
+                            .padding(.bottom, Space.xxs)
+                        ForEach(plan, id: \.id) { PlanRow(todo: $0, tint: session.harness.tint) }
+                    }
+                    if !steps.isEmpty {
+                        SectionLabel(text: plan.isEmpty ? "What it's doing" : "Latest steps")
+                            .padding(.bottom, Space.xxs).padding(.top, plan.isEmpty ? 0 : Space.s)
+                        ForEach(steps) { StepRow(step: $0, cwd: session.cwd, tint: session.harness.tint) }
+                    }
                 }
             }
             .frame(maxHeight: .infinity, alignment: .top)
@@ -289,22 +301,72 @@ private struct StepTimeline: View {
     }
 }
 
+/// Checkbox column: empty ring, spinner, check or cross.
+private struct CheckMark: View {
+    enum State { case pending, running, done, failed }
+    let state: State
+    var tint: Color = Theme.claude
+
+    var body: some View {
+        Group {
+            switch state {
+            case .pending: Circle().strokeBorder(Theme.hairlineStrong, lineWidth: 1.5)
+            case .running: Spinner(tint: tint)
+            case .done: Image(systemName: "checkmark.circle.fill").resizable().foregroundStyle(Theme.success)
+            case .failed: Image(systemName: "xmark.circle.fill").resizable().foregroundStyle(Theme.danger)
+            }
+        }
+        .frame(width: 13, height: 13)
+        .frame(width: 18)
+    }
+}
+
+/// Small arc spinner; drawn by hand so snapshots render it too.
+private struct Spinner: View {
+    var tint: Color = Theme.claude
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: Motion.reduceMotion)) { ctx in
+            Circle().trim(from: 0, to: 0.72)
+                .stroke(tint, style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+                .rotationEffect(.degrees(ctx.date.timeIntervalSinceReferenceDate * 400))
+        }
+        .frame(width: 12, height: 12)
+    }
+}
+
+private struct PlanRow: View {
+    let todo: AgentTodo
+    let tint: Color
+    var body: some View {
+        let running = todo.status == .inProgress, done = todo.status == .completed
+        HStack(spacing: Space.s) {
+            CheckMark(state: done ? .done : (running ? .running : .pending), tint: tint)
+            Text(todo.label)
+                .font(Theme.caption.weight(running ? .semibold : .medium))
+                .foregroundStyle(running ? .white : (done ? Theme.tertiaryText : Theme.secondaryText))
+                .strikethrough(done, color: Theme.tertiaryText)
+                .lineLimit(1)
+                .shimmer(running)
+            Spacer(minLength: 0)
+        }
+        .frame(height: 21)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(done ? "done" : (running ? "in progress" : "to do"))
+    }
+}
+
 private struct StepRow: View {
     let step: AgentStep
     let cwd: String
+    let tint: Color
 
     var body: some View {
         let running = step.state == .running, failed = step.state == .failed
-        HStack(spacing: Space.m) {
-            ZStack {
-                Circle().fill(Theme.card)
-                Circle().fill((failed ? Theme.danger : step.kind.tint).opacity(running ? 0.28 : 0.16))
-                Image(systemName: failed ? "xmark" : step.kind.symbol)
-                    .font(.system(size: 8.5, weight: .bold))
-                    .foregroundStyle(failed ? Theme.danger : step.kind.tint)
-            }
-            .frame(width: 20, height: 20)
-            .overlay { if running { Circle().strokeBorder(step.kind.tint.opacity(0.7), lineWidth: 1) } }
+        HStack(spacing: Space.s) {
+            CheckMark(state: running ? .running : (failed ? .failed : .done), tint: tint)
+            Image(systemName: step.kind.symbol)
+                .font(.system(size: 9, weight: .bold)).foregroundStyle(step.kind.tint.opacity(running ? 1 : 0.7))
+                .frame(width: 12)
             Text(step.title)
                 .font(Theme.caption.weight(.semibold))
                 .foregroundStyle(running ? .white : (failed ? Theme.danger.opacity(0.9) : Theme.secondaryText))
@@ -312,53 +374,37 @@ private struct StepRow: View {
                 .shimmer(running)
                 .layoutPriority(1)
             if let d = step.detail(relativeTo: cwd) {
-                Text(d).font(Theme.mono(10)).foregroundStyle(Theme.tertiaryText).lineLimit(1).truncationMode(.head)
+                Text("in \(d)").font(Theme.micro).foregroundStyle(Theme.tertiaryText).lineLimit(1).truncationMode(.head)
             }
             Spacer(minLength: Space.xs)
             Group {
                 if running { Text(step.startedAt, style: .timer) } else { Text(AgentFormat.short(step.duration())) }
             }
-            .font(Theme.mono(10)).foregroundStyle(running ? step.kind.tint : Theme.tertiaryText)
+            .font(Theme.mono(10)).foregroundStyle(running ? tint : Theme.tertiaryText)
         }
-        .frame(height: 24)
-        .help(step.subject)
+        .frame(height: 21)
+        .help(step.subject.isEmpty ? step.tool : "\(step.tool): \(step.subject)")
         .accessibilityElement(children: .combine)
     }
 }
 
-/// Stacked bar of tool kinds this turn, with the top three in a legend.
-private struct ToolMix: View {
+/// One plain line about the turn: steps, files changed, problems.
+private struct TurnSummary: View {
     let session: AgentSession
     var body: some View {
-        let kinds = AgentStep.Kind.allCases.filter { (session.kindCounts[$0] ?? 0) > 0 }
-        let total = max(session.toolCount, 1)
-        if !kinds.isEmpty {
-            VStack(alignment: .leading, spacing: 5) {
-                GeometryReader { geo in
-                    let gaps = CGFloat(kinds.count - 1) * 2
-                    HStack(spacing: 2) {
-                        ForEach(kinds, id: \.self) { k in
-                            Capsule().fill(k.tint)
-                                .frame(width: max(3, (geo.size.width - gaps) * CGFloat(session.kindCounts[k] ?? 0) / CGFloat(total)))
-                        }
-                    }
+        if session.toolCount > 0 {
+            HStack(spacing: 10) {
+                Label("\(session.toolCount) step\(session.toolCount == 1 ? "" : "s")", systemImage: "checklist")
+                if !session.files.isEmpty {
+                    Label("\(session.files.count) file\(session.files.count == 1 ? "" : "s") changed", systemImage: "doc.badge.ellipsis")
                 }
-                .frame(height: 4)
-                HStack(spacing: 10) {
-                    ForEach(kinds.sorted { (session.kindCounts[$0] ?? 0) > (session.kindCounts[$1] ?? 0) }.prefix(3), id: \.self) { k in
-                        HStack(spacing: 4) {
-                            Circle().fill(k.tint).frame(width: 5, height: 5)
-                            Text("\(session.kindCounts[k] ?? 0) \(k.noun)")
-                        }
-                    }
-                    Spacer(minLength: 0)
-                    if session.failures > 0 {
-                        Label("\(session.failures) failed", systemImage: "exclamationmark.triangle.fill").foregroundStyle(Theme.danger)
-                    }
-                    if !session.files.isEmpty { Text("\(session.files.count) file\(session.files.count == 1 ? "" : "s") changed") }
+                if session.failures > 0 {
+                    Label("\(session.failures) hiccup\(session.failures == 1 ? "" : "s")", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.danger)
                 }
-                .font(Theme.micro).foregroundStyle(Theme.tertiaryText).monospacedDigit()
+                Spacer(minLength: 0)
             }
+            .font(Theme.micro).foregroundStyle(Theme.tertiaryText).monospacedDigit()
             .accessibilityElement(children: .combine)
         }
     }
@@ -394,7 +440,7 @@ private struct AgentCard: View {
             HStack(spacing: Space.m) {
                 if AgentsFeature.settings.value.showPet {
                     TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                        PetView(mood: AgentStore.mood([session], at: ctx.date), size: 30)
+                        PetView(mood: AgentStore.mood([session], at: ctx.date), harness: session.harness, size: 30)
                     }
                     .frame(width: 30, height: 30)
                 } else {
@@ -404,14 +450,16 @@ private struct AgentCard: View {
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(session.project).font(Theme.title(13)).lineLimit(1)
-                    Text(session.title.isEmpty ? "Claude Code" : session.title).font(Theme.caption).foregroundStyle(Theme.secondaryText).lineLimit(1)
+                    Text(session.title.isEmpty ? session.harness.name : session.title).font(Theme.caption).foregroundStyle(Theme.secondaryText).lineLimit(1)
                 }
                 Spacer(minLength: Space.xs)
                 PhaseBadge(phase: session.phase)
             }
             HStack(spacing: Space.s) {
-                if let k = session.runningStep?.kind {
-                    Image(systemName: k.symbol).font(.system(size: 10, weight: .bold)).foregroundStyle(k.tint)
+                if session.phase.needsAttention {
+                    Image(systemName: "hand.raised.fill").font(.system(size: 10, weight: .bold)).foregroundStyle(Theme.warning)
+                } else if session.runningStep != nil {
+                    Spinner(tint: session.harness.tint)
                 }
                 Text(session.currentLine).font(Theme.body).lineLimit(1)
                     .foregroundStyle(session.phase.needsAttention ? Theme.warning : .white)
@@ -421,11 +469,10 @@ private struct AgentCard: View {
             }
             if !compact {
                 VStack(alignment: .leading, spacing: Space.xs) {
-                    ForEach(session.steps.suffix(3).reversed()) { step in
-                        HStack(spacing: Space.s) {
-                            Image(systemName: step.state == .failed ? "xmark" : step.kind.symbol)
-                                .frame(width: 14)
-                                .foregroundStyle(step.state == .failed ? Theme.danger : step.kind.tint.opacity(0.85))
+                    // The running step is already the headline above.
+                    ForEach(session.steps.filter { $0.state != .running }.suffix(3).reversed()) { step in
+                        HStack(spacing: Space.xs) {
+                            CheckMark(state: step.state == .running ? .running : (step.state == .failed ? .failed : .done), tint: session.harness.tint)
                             Text(step.title).lineLimit(1)
                             Spacer(minLength: 0)
                             Text(step.state == .running ? "" : AgentFormat.short(step.duration())).font(Theme.mono(10))
@@ -505,6 +552,11 @@ struct PhaseBadge: View {
 }
 
 enum AgentFormat {
+    /// Words Claude Code shows while it thinks; one every few seconds.
+    static let musings = ["Pondering", "Percolating", "Noodling", "Mulling", "Brewing", "Cogitating", "Ruminating",
+                          "Simmering", "Musing", "Conjuring", "Tinkering", "Deliberating", "Hatching", "Marinating"]
+    static func musing(at date: Date) -> String { musings[Int(date.timeIntervalSinceReferenceDate / 3) % musings.count] }
+
     /// m:ss, or h:mm:ss past an hour.
     static func clock(_ t: TimeInterval) -> String {
         let s = max(0, Int(t))

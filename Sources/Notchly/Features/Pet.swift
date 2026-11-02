@@ -1,9 +1,9 @@
 import SwiftUI
 
-// MARK: - Claude pet
+// MARK: - Agent mascots
 //
-// A small vector companion that mirrors what Claude Code is doing. It is drawn in one Canvas
-// (a single layer, no view tree per limb), and its TimelineView pauses whenever the pet is
+// A small pixel companion per coding agent that mirrors what the agent is doing. It is drawn in one
+// Canvas (a single layer, no view tree per limb), and its TimelineView pauses whenever the pet is
 // static: under Reduce Motion, or when `animated` is false (snapshots, settings previews).
 
 enum PetMood: Equatable {
@@ -27,8 +27,6 @@ enum PetMood: Equatable {
         }
     }
 
-    var accessibilityLabel: String { "Claude pet: \(title)" }
-
     /// Accent used for glows, badges and the hero card tint.
     var tint: Color {
         switch self {
@@ -40,26 +38,30 @@ enum PetMood: Equatable {
         case .oops: Theme.danger
         }
     }
-
-    fileprivate var isWorking: Bool { if case .working = self { return true } else { return false } }
 }
 
 struct PetView: View {
     var mood: PetMood
+    var harness: Harness = .claude
     var size: CGFloat = 64
     var animated = true
+    /// Legs step and the body bobs (the roaming mascot sets this while it walks).
+    var walking = false
+    var facingLeft = false
 
     var body: some View {
         let still = !animated || Motion.reduceMotion
         // Tiny pets in the closed notch tick slower (nobody can see 30 fps at 24 pt), and a sleeping pet barely moves.
-        let rate: Double = mood == .sleeping ? 1.0 / 12 : (size < 34 ? 1.0 / 20 : 1.0 / 30)
+        let rate: Double = mood == .sleeping && !walking ? 1.0 / 12 : (size < 34 ? 1.0 / 20 : 1.0 / 30)
         TimelineView(.animation(minimumInterval: rate, paused: still)) { ctx in
             let t = still ? 0.6 : ctx.date.timeIntervalSinceReferenceDate
-            Canvas { g, sz in PetPainter(mood: mood, t: t, detail: size >= 34).draw(&g, sz) }
+            Canvas { g, sz in
+                PetPainter(mood: mood, sprite: .of(harness), t: t, detail: size >= 34, walking: walking, facingLeft: facingLeft).draw(&g, sz)
+            }
         }
         .frame(width: size, height: size)
         .accessibilityElement()
-        .accessibilityLabel(mood.accessibilityLabel)
+        .accessibilityLabel("\(harness.short) mascot: \(mood.title)")
     }
 }
 
@@ -69,30 +71,95 @@ struct AgentPet: View {
     var size: CGFloat = 64
     var body: some View {
         let store = AgentStore.shared
+        let list = store.sorted
+        let harness = (list.first(where: \.phase.needsAttention) ?? list.first(where: \.phase.isBusy) ?? list.first)?.harness ?? .claude
         if Motion.reduceMotion {
-            PetView(mood: store.petMood(at: Date()), size: size, animated: false)
+            PetView(mood: store.petMood(at: Date()), harness: harness, size: size, animated: false)
         } else {
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                PetView(mood: store.petMood(at: ctx.date), size: size)
+                PetView(mood: store.petMood(at: ctx.date), harness: harness, size: size)
             }
         }
     }
+}
+
+// MARK: - Sprites
+//
+// Pixel characters, one per harness. Claude is a blocky crab-like critter in the spirit of the
+// Claude Code terminal mascot; Codex is a small terminal robot; Gemini is a four-point star.
+// Eyes, arms and legs are drawn on top so each mood can move them.
+
+private struct Sprite {
+    /// `#` body, `d` shade, `s` screen, `a` antenna light (mood tint), `.` empty.
+    let rows: [String]
+    /// Left and right eye: top cell of a 1×2 eye.
+    let eyes: [(Int, Int)]
+    /// Two-cell arm stubs beside the body at this row (nil = no arms).
+    let armRow: Int?
+    let legs: [Int]
+    let colors: (top: Color, bottom: Color, shade: Color, screen: Color, eye: Color)
+
+    var width: Int { rows.map(\.count).max() ?? 0 }
+    var height: Int { rows.count + (legs.isEmpty ? 0 : 2) }
+
+    static func of(_ h: Harness) -> Sprite {
+        switch h {
+        case .claude: claude
+        case .codex: codex
+        case .gemini: gemini
+        }
+    }
+
+    static let claude = Sprite(rows: [
+        "..############..",
+        "..############..",
+        "..############..",
+        "..############..",
+        "..dddddddddddd..",
+    ], eyes: [(4, 1), (11, 1)], armRow: 2, legs: [3, 5, 10, 12],
+       colors: (Color(hex: 0xE5866A), Color(hex: 0xD97757), Color(hex: 0xB65A3B), .clear, Color(hex: 0x2A1712)))
+
+    static let codex = Sprite(rows: [
+        ".......a........",
+        ".......#........",
+        "...##########...",
+        "..############..",
+        "..#ssssssssss#..",
+        "..#ssssssssss#..",
+        "..#ssssssssss#..",
+        "..#ssssssssss#..",
+        "..############..",
+        "...dddddddddd...",
+    ], eyes: [(5, 5), (10, 5)], armRow: 6, legs: [4, 6, 9, 11],
+       colors: (Color(hex: 0xF4F4F4), Color(hex: 0xD9D9D9), Color(hex: 0xA8A8A8), Color(hex: 0x1C1C1E), Color(hex: 0x7CF0B0)))
+
+    static let gemini = Sprite(rows: [
+        ".......#.......",
+        "......###......",
+        "......###......",
+        ".....#####.....",
+        "...#########...",
+        ".#############.",
+        "###############",
+        ".#############.",
+        "...#########...",
+        ".....#####.....",
+        "......###......",
+        "......###......",
+        ".......#.......",
+    ], eyes: [(5, 5), (9, 5)], armRow: nil, legs: [],
+       colors: (Color(hex: 0x5B8CFF), Color(hex: 0xA77BFF), Color(hex: 0x8A6BE8), .clear, Color(hex: 0x14193A)))
 }
 
 // MARK: - Painter
 
 private struct PetPainter {
     let mood: PetMood
+    let sprite: Sprite
     let t: Double
     let detail: Bool
-
-    // Palette (Display P3 friendly sRGB values).
-    private let body = Color(hex: 0xDE7C5A)
-    private let bodyTop = Color(hex: 0xEC977A)
-    private let bodyShade = Color(hex: 0xBF5E3E)
-    private let belly = Color(hex: 0xF6C3A9)
-    private let ink = Color(hex: 0x2A1712)
-    private let cheek = Color(hex: 0xF59A8C)
+    var walking = false
+    var facingLeft = false
 
     func draw(_ g: inout GraphicsContext, _ size: CGSize) {
         let s = min(size.width, size.height)
@@ -100,221 +167,137 @@ private struct PetPainter {
         func P(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: ox + x * s, y: oy + y * s) }
         func R(_ x: Double, _ y: Double, _ w: Double, _ h: Double) -> CGRect { CGRect(x: ox + x * s, y: oy + y * s, width: w * s, height: h * s) }
 
-        // Motion: hop (vertical lift), squash (breathing), sway (horizontal).
-        var hop = 0.0, squash = 1.0, sway = 0.0
+        // Motion: hop lifts the whole sprite (pixel art does not squash).
+        var hop = 0.0
         switch mood {
-        case .sleeping: squash = 1 + sin(t * 1.3) * 0.035
-        case .idle: hop = (sin(t * 2) + 1) * 0.008; squash = 1 + sin(t * 2) * 0.015
-        case .thinking: hop = (sin(t * 2.4) + 1) * 0.01; sway = sin(t * 1.2) * 0.008
-        case .working: hop = abs(sin(t * 6)) * 0.022; squash = 1 - abs(sin(t * 6)) * 0.02
-        case .alert: hop = max(0, sin(t * 7)) * 0.06; squash = 1 + max(0, -sin(t * 7)) * 0.03
+        case .sleeping: hop = 0
+        case .idle: hop = (sin(t * 2) + 1) * 0.008
+        case .thinking: hop = (sin(t * 2.4) + 1) * 0.01
+        case .working: hop = abs(sin(t * 6)) * 0.022
+        case .alert: hop = max(0, sin(t * 7)) * 0.06
         case .celebrating: hop = abs(sin(t * 6.5)) * 0.085
-        case .oops: sway = sin(t * 18) * 0.006 * (1 + sin(t * 1.5)); squash = 0.97
+        case .oops: hop = 0
         }
+        // No legs: walking is a string of small hops.
+        if walking { hop = sprite.legs.isEmpty ? abs(sin(t * 9)) * 0.08 : abs(sin(t * 16)) * 0.015 }
+        let shake = mood == .oops ? sin(t * 18) * 0.006 * (1 + sin(t * 1.5)) : 0
 
-        let bw = 0.60 * (2 - squash), bh = 0.50 * squash
-        let bottom = 0.86 - hop
-        let bx = 0.5 - bw / 2 + sway, by = bottom - bh
-        let cx = 0.5 + sway
+        let cell = 0.78 * s / 16
+        let spriteW = Double(sprite.width) * cell, spriteH = Double(sprite.height) * cell
+        let feet = 0.86 - hop
+        let x0 = ox + 0.5 * s - spriteW / 2 + shake * s, y0 = oy + feet * s - spriteH
 
         // Ground light: a soft glow that shrinks while the pet is in the air.
         let glowW = 0.52 * (1 - hop * 3.5)
         g.fill(Path(ellipseIn: R(0.5 - glowW / 2, 0.875, glowW, 0.06)), with: .color(mood.tint.opacity(0.28)))
 
-        // Arms sit behind the body; only the ends that stick out are visible.
-        let (la, ra) = armAngles()
-        let armL = P(bx + 0.06, by + bh * 0.58), armR = P(bx + bw - 0.06, by + bh * 0.58)
-        for (pivot, a) in [(armL, la), (armR, ra)] {
-            var arm = Path()
-            arm.move(to: pivot)
-            arm.addLine(to: CGPoint(x: pivot.x + cos(a) * 0.17 * s, y: pivot.y + sin(a) * 0.17 * s))
-            g.stroke(arm, with: .color(bodyShade), style: StrokeStyle(lineWidth: 0.085 * s, lineCap: .round))
+        var c = g
+        if facingLeft {
+            c.translateBy(x: x0 * 2 + spriteW, y: 0)
+            c.scaleBy(x: -1, y: 1)
+        }
+        func px(_ x: Int, _ y: Int, _ color: Color) {
+            // A hair of overlap hides seams between cells.
+            c.fill(Path(CGRect(x: x0 + Double(x) * cell, y: y0 + Double(y) * cell, width: cell + 0.4, height: cell + 0.4)), with: .color(color))
         }
 
-        // Feet.
-        for fx in [cx - 0.13, cx + 0.07] {
-            g.fill(Path(roundedRect: R(fx, bottom - 0.035, 0.11, 0.07), cornerRadius: 0.035 * s), with: .color(bodyShade))
+        // Body: a vertical gradient from top to bottom colour, row by row.
+        let n = max(sprite.rows.count - 1, 1)
+        for (y, row) in sprite.rows.enumerated() {
+            let fill = mix(sprite.colors.top, sprite.colors.bottom, Double(y) / Double(n))
+            for (x, ch) in row.enumerated() {
+                switch ch {
+                case "#": px(x, y, fill)
+                case "d": px(x, y, sprite.colors.shade)
+                case "s": px(x, y, sprite.colors.screen)
+                case "a": px(x, y, mood == .sleeping ? sprite.colors.shade : mood.tint)
+                default: break
+                }
+            }
         }
 
-        // Antenna with a spark on top.
-        let top = P(cx, by + 0.01)
-        let tip = P(cx + 0.06 + sin(t * 2.2) * (mood == .sleeping ? 0 : 0.012), by - 0.12)
-        var stalk = Path()
-        stalk.move(to: top)
-        stalk.addQuadCurve(to: tip, control: P(cx - 0.02, by - 0.06))
-        g.stroke(stalk, with: .color(bodyShade), style: StrokeStyle(lineWidth: 0.03 * s, lineCap: .round))
-        drawSpark(&g, at: tip, s: s)
-
-        // Body.
-        let bodyRect = R(bx, by, bw, bh)
-        let bodyPath = Path(roundedRect: bodyRect, cornerRadius: 0.24 * s, style: .continuous)
-        g.fill(bodyPath, with: .linearGradient(Gradient(colors: [bodyTop, body, bodyShade]),
-                                               startPoint: CGPoint(x: bodyRect.midX, y: bodyRect.minY),
-                                               endPoint: CGPoint(x: bodyRect.midX, y: bodyRect.maxY)))
-        // Belly highlight and a rim light along the top edge.
-        g.fill(Path(ellipseIn: R(cx - 0.17, by + bh * 0.55, 0.34, bh * 0.38)), with: .color(belly.opacity(0.3)))
-        var rim = Path()
-        rim.addArc(center: P(cx, by + 0.24), radius: 0.215 * s, startAngle: .degrees(205), endAngle: .degrees(255), clockwise: false)
-        g.stroke(rim, with: .color(.white.opacity(0.35)), style: StrokeStyle(lineWidth: 0.018 * s, lineCap: .round))
-
-        // Face.
-        let eyeY = by + bh * 0.40
-        drawEyes(&g, s: s, left: P(cx - 0.10, eyeY), right: P(cx + 0.10, eyeY))
-        let cheekA = mood == .celebrating || mood == .alert ? 0.85 : 0.55
-        for x in [cx - 0.175, cx + 0.105] {
-            g.fill(Path(ellipseIn: R(x, eyeY + 0.045, 0.07, 0.04)), with: .color(cheek.opacity(cheekA)))
+        // Arms: two cells each side; raised one row per step.
+        if let ay = sprite.armRow {
+            let (l, r) = armLift()
+            let w = sprite.width
+            for (x, lift) in [(0, l), (1, l), (w - 2, r), (w - 1, r)] { px(x, ay - lift, sprite.colors.bottom) }
         }
-        drawMouth(&g, s: s, at: P(cx, eyeY + 0.085))
+
+        // Legs: two cells tall; while walking, alternate pairs lift.
+        if !sprite.legs.isEmpty {
+            let ly = sprite.rows.count
+            let phase = Int(t * 8) % 2
+            for (i, x) in sprite.legs.enumerated() {
+                let lifted = (walking || mood == .celebrating) && i % 2 == phase
+                px(x, ly, sprite.colors.shade)
+                if !lifted { px(x, ly + 1, sprite.colors.shade) }
+            }
+        }
+
+        // Eyes: a few cell patterns per mood; the right eye mirrors the left.
+        let (pattern, look) = eyePattern()
+        for (i, e) in sprite.eyes.enumerated() {
+            let mirror = i == 1 ? -1 : 1
+            for (dx, dy) in pattern { px(e.0 + dx * mirror + look.0, e.1 + dy + look.1, sprite.colors.eye) }
+        }
 
         // Props and effects.
         guard detail || mood == .alert else { return }
         switch mood {
         case .sleeping: drawZs(&g, s: s, P)
         case .thinking: drawThoughts(&g, s: s, P)
-        case .working(let k): drawProp(&g, kind: k, s: s, center: P(0.82, 0.76 - hop * 0.5))
+        case .working(let k): drawProp(&g, kind: k, s: s, center: P(0.84, 0.74 - hop * 0.5))
         case .alert: drawAlertBubble(&g, s: s, center: P(0.80, 0.20))
         case .celebrating: drawConfetti(&g, s: s, P)
-        case .oops: drawSweat(&g, s: s, at: P(cx + 0.22, by + 0.06))
+        case .oops: drawSweat(&g, s: s, at: CGPoint(x: x0 + spriteW - cell, y: y0 + cell))
         case .idle: break
         }
     }
 
+    private func mix(_ a: Color, _ b: Color, _ f: Double) -> Color {
+        let x = NSColor(a).usingColorSpace(.sRGB) ?? .white, y = NSColor(b).usingColorSpace(.sRGB) ?? .white
+        return Color(red: x.redComponent + (y.redComponent - x.redComponent) * f,
+                     green: x.greenComponent + (y.greenComponent - x.greenComponent) * f,
+                     blue: x.blueComponent + (y.blueComponent - x.blueComponent) * f)
+    }
+
+    /// Rows each arm is raised (left, right).
+    private func armLift() -> (Int, Int) {
+        switch mood {
+        case .alert: return (0, Int(t * 6) % 2 + 1)                       // waving
+        case .celebrating: return (Int(t * 8) % 2 + 1, Int(t * 8 + 1) % 2 + 1)
+        case .thinking: return (0, 1)                                      // hand to chin
+        case .working(let k):
+            switch k {
+            case .command, .edit, .write: return (Int(t * 14) % 2, Int(t * 14 + 1) % 2)   // typing
+            default: return (0, 0)
+            }
+        default: return (0, 0)
+        }
+    }
+
+    /// Cells of the left eye relative to its anchor, and a gaze shift in cells.
+    private func eyePattern() -> ([(Int, Int)], (Int, Int)) {
+        switch mood {
+        case .sleeping: return ([(-1, 1), (0, 1), (1, 1)], (0, 0))
+        case .celebrating: return ([(-1, 1), (0, 0), (1, 1)], (0, 0))
+        case .oops: return ([(-1, 0), (0, 1), (-1, 2)], (0, 0))
+        case .alert: return ([(0, 0), (0, 1), (1, 0), (1, 1)], (0, 0))
+        default: break
+        }
+        var look = (0, 0)
+        switch mood {
+        case .thinking: look = (1, -1)
+        case .working(let k) where k == .read || k == .search || k == .web: look = (sin(t * 2.4) > 0 ? 1 : -1, 0)
+        case .idle: look = (sin(t * 0.55) > 0.6 ? 1 : (sin(t * 0.55) < -0.6 ? -1 : 0), 0)
+        default: break
+        }
+        // Blink: one row for a moment every few seconds.
+        let blink = t.truncatingRemainder(dividingBy: 3.8) < 0.13
+        return (blink ? [(0, 1)] : [(0, 0), (0, 1)], look)
+    }
+
     // MARK: Parts
-
-    /// Arm angles in radians (0 = right, π/2 = down in view space).
-    private func armAngles() -> (Double, Double) {
-        switch mood {
-        case .alert: return (.pi * 0.72, -.pi * 0.38 + sin(t * 11) * 0.38)          // waving right arm
-        case .celebrating: return (-.pi * 0.72 + sin(t * 9) * 0.15, -.pi * 0.28 - sin(t * 9) * 0.15)
-        case .thinking: return (.pi * 0.70, -.pi * 0.78)                                // hand to chin
-        case .working(let k):
-            switch k {
-            case .command, .edit, .write: // typing
-                return (.pi * 0.62 + sin(t * 17) * 0.22, .pi * 0.38 - sin(t * 17 + 1.4) * 0.22)
-            default: return (.pi * 0.66 + sin(t * 3) * 0.06, .pi * 0.30 + sin(t * 3) * 0.08)
-            }
-        case .oops: return (.pi * 0.80, .pi * 0.20)
-        case .sleeping: return (.pi * 0.68, .pi * 0.32)
-        case .idle: return (.pi * 0.66, .pi * 0.34 + sin(t * 1.4) * 0.05)
-        }
-    }
-
-    private func drawSpark(_ g: inout GraphicsContext, at p: CGPoint, s: Double) {
-        let pulse: Double
-        switch mood {
-        case .alert: pulse = 1 + sin(t * 8) * 0.18
-        case .working, .thinking: pulse = 1 + sin(t * 4) * 0.1
-        case .celebrating: pulse = 1.15
-        default: pulse = 1
-        }
-        let r = 0.06 * s * pulse
-        let color: Color = mood == .sleeping ? Color(hex: 0xC9A88E) : (mood == .alert ? Theme.warning : Color(hex: 0xFFD7A6))
-        if mood != .sleeping {
-            g.fill(Path(ellipseIn: CGRect(x: p.x - r * 1.6, y: p.y - r * 1.6, width: r * 3.2, height: r * 3.2)),
-                   with: .radialGradient(Gradient(colors: [color.opacity(0.45), .clear]), center: p, startRadius: 0, endRadius: r * 1.6))
-        }
-        var c = g
-        c.translateBy(x: p.x, y: p.y)
-        c.rotate(by: .radians(mood.isWorking || mood == .thinking ? t * 1.6 : 0))
-        c.fill(SparkShape().path(in: CGRect(x: -r, y: -r, width: r * 2, height: r * 2)), with: .color(color))
-    }
-
-    private func drawEyes(_ g: inout GraphicsContext, s: Double, left: CGPoint, right: CGPoint) {
-        let lw = 0.024 * s
-        func arc(_ c: CGPoint, up: Bool) -> Path {
-            var p = Path()
-            p.move(to: CGPoint(x: c.x - 0.04 * s, y: c.y))
-            p.addQuadCurve(to: CGPoint(x: c.x + 0.04 * s, y: c.y), control: CGPoint(x: c.x, y: c.y + (up ? -0.045 : 0.035) * s))
-            return p
-        }
-        switch mood {
-        case .sleeping:
-            for c in [left, right] { g.stroke(arc(c, up: false), with: .color(ink), style: StrokeStyle(lineWidth: lw, lineCap: .round)) }
-            return
-        case .celebrating:
-            for c in [left, right] { g.stroke(arc(c, up: true), with: .color(ink), style: StrokeStyle(lineWidth: lw, lineCap: .round)) }
-            return
-        case .oops:
-            // > <
-            for (c, dir) in [(left, 1.0), (right, -1.0)] {
-                var p = Path()
-                p.move(to: CGPoint(x: c.x - dir * 0.035 * s, y: c.y - 0.03 * s))
-                p.addLine(to: CGPoint(x: c.x + dir * 0.025 * s, y: c.y))
-                p.addLine(to: CGPoint(x: c.x - dir * 0.035 * s, y: c.y + 0.03 * s))
-                g.stroke(p, with: .color(ink), style: StrokeStyle(lineWidth: lw, lineCap: .round, lineJoin: .round))
-            }
-            return
-        default: break
-        }
-
-        // Open eyes, with blink and gaze.
-        let big = mood == .alert
-        let w = (big ? 0.10 : 0.085) * s
-        var h = (big ? 0.13 : 0.11) * s
-        let cycle = t.truncatingRemainder(dividingBy: 3.8)
-        if cycle < 0.13 { h *= 0.12 }
-        var look = CGPoint.zero
-        switch mood {
-        case .thinking: look = CGPoint(x: (0.012 + sin(t * 0.9) * 0.008) * s, y: -0.02 * s)
-        case .working(let k):
-            switch k {
-            case .read, .search, .web: look = CGPoint(x: sin(t * 2.4) * 0.016 * s, y: 0.006 * s)
-            default: look = CGPoint(x: 0, y: 0.014 * s)
-            }
-        case .idle: look = CGPoint(x: sin(t * 0.55) * 0.012 * s, y: 0)
-        default: break
-        }
-        for c in [left, right] {
-            let e = CGRect(x: c.x - w / 2 + look.x, y: c.y - h / 2 + look.y, width: w, height: h)
-            g.fill(Path(ellipseIn: e), with: .color(ink))
-            if h > w * 0.5 {
-                let gr = 0.022 * s
-                g.fill(Path(ellipseIn: CGRect(x: e.minX + w * 0.22, y: e.minY + h * 0.16, width: gr, height: gr)), with: .color(.white.opacity(0.95)))
-            }
-        }
-        if big {
-            // Inner ends raised: attentive, not cross.
-            for (c, dir) in [(left, 1.0), (right, -1.0)] {
-                var brow = Path()
-                brow.move(to: CGPoint(x: c.x - 0.035 * s, y: c.y - 0.095 * s + dir * 0.008 * s))
-                brow.addLine(to: CGPoint(x: c.x + 0.035 * s, y: c.y - 0.095 * s - dir * 0.008 * s))
-                g.stroke(brow, with: .color(ink), style: StrokeStyle(lineWidth: 0.018 * s, lineCap: .round))
-            }
-        }
-    }
-
-    private func drawMouth(_ g: inout GraphicsContext, s: Double, at m: CGPoint) {
-        let lw = 0.02 * s
-        var p = Path()
-        switch mood {
-        case .celebrating:
-            p.move(to: CGPoint(x: m.x - 0.05 * s, y: m.y - 0.01 * s))
-            p.addQuadCurve(to: CGPoint(x: m.x + 0.05 * s, y: m.y - 0.01 * s), control: CGPoint(x: m.x, y: m.y + 0.08 * s))
-            p.closeSubpath()
-            g.fill(p, with: .color(ink))
-            g.fill(Path(ellipseIn: CGRect(x: m.x - 0.02 * s, y: m.y + 0.012 * s, width: 0.04 * s, height: 0.022 * s)), with: .color(cheek))
-        case .alert, .sleeping:
-            let r = (mood == .alert ? 0.034 : 0.022) * s
-            g.fill(Path(ellipseIn: CGRect(x: m.x - r / 2, y: m.y - r / 2, width: r, height: r * 1.15)), with: .color(ink))
-        case .working:
-            p.move(to: CGPoint(x: m.x - 0.022 * s, y: m.y))
-            p.addLine(to: CGPoint(x: m.x + 0.022 * s, y: m.y))
-            g.stroke(p, with: .color(ink), style: StrokeStyle(lineWidth: lw, lineCap: .round))
-        case .thinking:
-            p.move(to: CGPoint(x: m.x - 0.012 * s, y: m.y + 0.004 * s))
-            p.addQuadCurve(to: CGPoint(x: m.x + 0.03 * s, y: m.y - 0.006 * s), control: CGPoint(x: m.x + 0.01 * s, y: m.y + 0.012 * s))
-            g.stroke(p, with: .color(ink), style: StrokeStyle(lineWidth: lw, lineCap: .round))
-        case .oops:
-            p.move(to: CGPoint(x: m.x - 0.04 * s, y: m.y + 0.008 * s))
-            p.addCurve(to: CGPoint(x: m.x + 0.04 * s, y: m.y + 0.008 * s),
-                       control1: CGPoint(x: m.x - 0.015 * s, y: m.y - 0.022 * s), control2: CGPoint(x: m.x + 0.015 * s, y: m.y + 0.036 * s))
-            g.stroke(p, with: .color(ink), style: StrokeStyle(lineWidth: lw, lineCap: .round))
-        case .idle:
-            p.move(to: CGPoint(x: m.x - 0.035 * s, y: m.y - 0.006 * s))
-            p.addQuadCurve(to: CGPoint(x: m.x + 0.035 * s, y: m.y - 0.006 * s), control: CGPoint(x: m.x, y: m.y + 0.03 * s))
-            g.stroke(p, with: .color(ink), style: StrokeStyle(lineWidth: lw, lineCap: .round))
-        }
-    }
 
     private func drawZs(_ g: inout GraphicsContext, s: Double, _ P: (Double, Double) -> CGPoint) {
         for i in 0..<3 {
@@ -384,5 +367,260 @@ private struct PetPainter {
         var c = g
         c.opacity = 1 - drop * 0.7
         c.fill(d, with: .color(Color(hex: 0x8CC8FF)))
+    }
+}
+
+// MARK: - Roaming mascots
+//
+// One mascot per harness with live sessions. Each lives in a small click-through panel one level
+// under the notch panel, so it can hide inside the notch and drop out of it. It hops between the
+// top edges of the frontmost windows and the floor of each screen.
+
+@MainActor @Observable
+final class MascotState {
+    var mood: PetMood = .idle
+    var bubble: String?
+    var walking = false
+    var facingLeft = false
+}
+
+@MainActor
+final class MascotRoamer {
+    static let shared = MascotRoamer()
+    private var walkers: [Harness: MascotWalker] = [:]
+    private var timer: Timer?
+
+    func start() {
+        // ponytail: polls the store at 2 Hz instead of observing it; enough for a mascot, cheap for a few sessions.
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+            MainActor.assumeIsolated { MascotRoamer.shared.tick() }
+        }
+    }
+
+    private func tick() {
+        let set = AgentsFeature.settings.value
+        let sessions = Array(AgentStore.shared.sessions.values)
+        let active = set.enabled && set.showPet && set.roams ? Set(sessions.map(\.harness)) : []
+        for (h, w) in walkers where !active.contains(h) { w.leave(); walkers[h] = nil }
+        let now = Date()
+        for (slot, h) in Harness.allCases.enumerated() where active.contains(h) {
+            let w = walkers[h] ?? MascotWalker(harness: h, slot: slot)
+            walkers[h] = w
+            w.tick(sessions.filter { $0.harness == h }, now: now)
+        }
+    }
+}
+
+@MainActor
+final class MascotWalker {
+    static let size: CGFloat = 46
+    /// Mascot in the top-left corner; the bubble hangs to its right and grows down, clear of the notch.
+    static let panelSize = CGSize(width: 300, height: 92)
+
+    private struct Move {
+        var to: CGPoint
+        var duration: Double
+        var arc: CGFloat = 0
+        var walk = false
+        var then: (() -> Void)?
+        var from = CGPoint.zero
+        var start: Date?
+    }
+
+    let harness: Harness
+    private let slot: Int
+    private let state = MascotState()
+    private let panel: NotchPanel
+    /// Feet of the mascot, in screen coordinates.
+    private var pos: CGPoint
+    private var moves: [Move] = []
+    private var anim: Timer?
+    private var atNotch = false
+    private var nextWander = Date()
+
+    init(harness: Harness, slot: Int) {
+        self.harness = harness
+        self.slot = slot
+        panel = NotchPanel(frame: CGRect(origin: .zero, size: Self.panelSize))
+        panel.level = .statusBar   // under the notch panel (.statusBar + 1): hidden by the notch until it drops out
+        panel.sharingType = Settings.general.value.showNotchInScreenshots ? .readOnly : .none
+        let host = NSHostingView(rootView: MascotPanelView(harness: harness, state: state))
+        host.sizingOptions = []
+        panel.contentView = host
+        pos = .zero
+        pos = notchHidden
+        place()
+        panel.orderFrontRegardless()
+        // Enter by dropping out of the notch.
+        go(notchOut, duration: 0.55)
+    }
+
+    // MARK: Places
+
+    private var home: NSScreen {
+        NotchManager.shared.controllers.first(where: \.model.hasPhysicalNotch)?.screen ?? NSScreen.main ?? NSScreen.screens[0]
+    }
+    private var notchX: CGFloat { home.frame.midX - 44 + CGFloat(slot) * 40 }
+    /// Above the top edge, behind the notch.
+    private var notchHidden: CGPoint { CGPoint(x: notchX, y: home.frame.maxY + 4) }
+    /// Hanging just under the notch.
+    private var notchOut: CGPoint {
+        CGPoint(x: notchX, y: home.frame.maxY - max(home.safeAreaInsets.top, 24) - Self.size * 0.8)
+    }
+
+    /// Frontmost normal windows of other apps, front to back, in Cocoa screen coordinates.
+    private func windowRects() -> [CGRect] {
+        let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        let top = NSScreen.screens.first?.frame.maxY ?? 0
+        var out: [CGRect] = []
+        for w in info where (w[kCGWindowLayer as String] as? Int) == 0
+            && (w[kCGWindowOwnerPID as String] as? Int32) != getpid()
+            && (w[kCGWindowAlpha as String] as? Double ?? 1) > 0 {
+            guard let d = w[kCGWindowBounds as String] as? NSDictionary, let r = CGRect(dictionaryRepresentation: d),
+                  r.width >= 160, r.height >= 80 else { continue }
+            out.append(CGRect(x: r.minX, y: top - r.maxY, width: r.width, height: r.height))
+            if out.count == 8 { break }
+        }
+        return out
+    }
+
+    /// A free spot on the top edge of a visible window, or on a screen floor.
+    private func randomSpot() -> CGPoint {
+        let rects = windowRects()
+        // The floor comes up about as often as any one window.
+        if Int.random(in: 0...rects.count) > 0 {
+            for _ in 0..<8 {
+                let i = Int.random(in: rects.indices)
+                let r = rects[i]
+                let p = CGPoint(x: .random(in: r.minX + 30...max(r.minX + 30, r.maxX - 30)), y: r.maxY)
+                if standable(p, on: i, rects) { return p }
+            }
+        }
+        let f = (NSScreen.screens.randomElement() ?? home).visibleFrame
+        return CGPoint(x: .random(in: f.minX + 40...f.maxX - 40), y: f.minY)
+    }
+
+    /// Not covered by a window in front, with head room below the menu bar.
+    private func standable(_ p: CGPoint, on i: Int, _ rects: [CGRect]) -> Bool {
+        let above = CGPoint(x: p.x, y: p.y + 4)
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(above) }),
+              p.y + Self.size < screen.visibleFrame.maxY else { return false }
+        return !rects[..<i].contains { $0.contains(above) }
+    }
+
+    /// Still on a floor or on an uncovered window edge (windows move and close under it).
+    private func supported(_ p: CGPoint) -> Bool {
+        if NSScreen.screens.contains(where: { abs($0.visibleFrame.minY - p.y) < 3 && $0.frame.minX <= p.x && p.x <= $0.frame.maxX }) { return true }
+        let rects = windowRects()
+        return rects.indices.contains { abs(rects[$0].maxY - p.y) < 3 && rects[$0].minX <= p.x && p.x <= rects[$0].maxX && standable(p, on: $0, rects) }
+    }
+
+    // MARK: Behaviour
+
+    /// What the bubble says: a request first, then a finish from the last few seconds.
+    static func note(_ list: [AgentSession], now: Date) -> String? {
+        if let s = list.first(where: \.phase.needsAttention) { return "\(s.project): \(s.attentionLine)" }
+        if let s = list.filter({ $0.phase == .done && now.timeIntervalSince($0.updatedAt) < 5 }).max(by: { $0.updatedAt < $1.updatedAt }) {
+            return "Done! \(s.title.isEmpty ? s.project : s.title)"
+        }
+        return nil
+    }
+
+    func tick(_ sessions: [AgentSession], now: Date) {
+        let mood = AgentStore.mood(sessions, at: now)
+        if mood != state.mood { state.mood = mood }
+        let note = Self.note(sessions, now: now)
+        if note != state.bubble { withAnimation(Motion.respecting(Motion.bouncy)) { state.bubble = note } }
+        if note != nil {
+            if !atNotch { pop() }
+            return
+        }
+        if atNotch { atNotch = false; moves.removeAll(); go(randomSpot()); return }
+        guard moves.isEmpty else { return }
+        if !supported(pos) { go(randomSpot()); return }
+        // Quiet agents rest; busy ones wander now and then.
+        switch mood { case .sleeping, .idle, .alert: return; default: break }
+        if now >= nextWander, !Motion.reduceMotion {
+            nextWander = now.addingTimeInterval(.random(in: 6...14))
+            go(randomSpot())
+        }
+    }
+
+    /// Hide in the notch, then drop out of it.
+    private func pop() {
+        atNotch = true
+        moves.removeAll()
+        go(notchHidden, duration: 0)
+        go(notchOut, duration: 0.55)
+    }
+
+    /// Climb back into the notch, then close.
+    func leave() {
+        state.bubble = nil
+        moves.removeAll()
+        if !atNotch { go(notchOut) }
+        go(notchHidden, duration: 0.35) { [panel] in panel.orderOut(nil); panel.close() }
+    }
+
+    private func go(_ to: CGPoint, duration: Double? = nil, then: (() -> Void)? = nil) {
+        let from = moves.last?.to ?? pos
+        let d = hypot(to.x - from.x, to.y - from.y)
+        let walk = abs(to.y - from.y) < 2 && duration == nil
+        let auto = walk ? Double(d / 110) : 0.45 + Double(d) / 1400
+        moves.append(Move(to: to, duration: Motion.reduceMotion ? 0 : min(duration ?? auto, 7),
+                          arc: walk || duration != nil ? 0 : min(140, 30 + d * 0.15), walk: walk, then: then))
+        guard anim == nil else { return }
+        // The timer holds the walker until its moves finish, so a leaving mascot still reaches the notch.
+        let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [self] _ in MainActor.assumeIsolated { step() } }
+        RunLoop.main.add(t, forMode: .common)
+        anim = t
+    }
+
+    private func step() {
+        guard !moves.isEmpty else {
+            anim?.invalidate(); anim = nil
+            state.walking = false
+            return
+        }
+        let now = Date()
+        if moves[0].start == nil {
+            moves[0].start = now
+            moves[0].from = pos
+            if abs(moves[0].to.x - pos.x) > 2 { state.facingLeft = moves[0].to.x < pos.x }
+            state.walking = moves[0].walk || moves[0].arc > 0
+        }
+        let m = moves[0]
+        let p = m.duration <= 0 ? 1 : min(1, now.timeIntervalSince(m.start ?? now) / m.duration)
+        let e = m.walk ? p : (1 - cos(p * .pi)) / 2
+        pos = CGPoint(x: m.from.x + (m.to.x - m.from.x) * e, y: m.from.y + (m.to.y - m.from.y) * e + m.arc * sin(p * .pi))
+        place()
+        if p >= 1 { moves.removeFirst().then?() }
+    }
+
+    private func place() {
+        panel.setFrameOrigin(CGPoint(x: pos.x - Self.size / 2, y: pos.y - Self.size * 0.14 - (Self.panelSize.height - Self.size)))
+    }
+}
+
+private struct MascotPanelView: View {
+    let harness: Harness
+    let state: MascotState
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            PetView(mood: state.mood, harness: harness, size: MascotWalker.size, walking: state.walking, facingLeft: state.facingLeft)
+            if let b = state.bubble {
+                Text(b)
+                    .font(Theme.caption.weight(.semibold)).foregroundStyle(.white)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(Color.black.opacity(0.88), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(harness.tint.opacity(0.6), lineWidth: 1))
+                    .frame(maxWidth: MascotWalker.panelSize.width - MascotWalker.size - 8, alignment: .leading)
+                    .padding(.leading, MascotWalker.size + 2).padding(.top, MascotWalker.size * 0.5)
+                    .transition(.scale(scale: 0.5, anchor: .topLeading).combined(with: .opacity))
+            }
+        }
+        .frame(width: MascotWalker.panelSize.width, height: MascotWalker.panelSize.height, alignment: .topLeading)
     }
 }

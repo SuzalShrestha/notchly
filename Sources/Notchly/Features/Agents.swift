@@ -29,14 +29,15 @@ enum AgentPhase: String, Codable { case thinking, working, needsPermission, need
 
 struct AgentStep: Identifiable, Equatable {
     enum Kind: String, Codable, CaseIterable { case read, edit, write, command, search, web, task, question, other
+        /// Claude Code, Gemini CLI and Codex tool names.
         init(tool: String) {
             switch tool {
-            case "Read", "NotebookRead": self = .read
-            case "Edit", "MultiEdit", "NotebookEdit": self = .edit
-            case "Write": self = .write
-            case "Bash", "BashOutput": self = .command
-            case "Grep", "Glob", "LS": self = .search
-            case "WebFetch", "WebSearch": self = .web
+            case "Read", "NotebookRead", "read_file", "read_many_files": self = .read
+            case "Edit", "MultiEdit", "NotebookEdit", "replace", "apply_patch": self = .edit
+            case "Write", "write_file": self = .write
+            case "Bash", "BashOutput", "run_shell_command", "shell", "exec_command": self = .command
+            case "Grep", "Glob", "LS", "glob", "search_file_content", "list_directory": self = .search
+            case "WebFetch", "WebSearch", "google_web_search", "web_fetch": self = .web
             case "Task", "Agent": self = .task
             case "AskUserQuestion": self = .question
             default: self = .other
@@ -49,25 +50,12 @@ struct AgentStep: Identifiable, Equatable {
             case .other: "wrench.and.screwdriver"
             }
         }
-        var verb: String {
-            switch self {
-            case .read: "Read"; case .edit: "Edit"; case .write: "Write"; case .command: "Run"; case .search: "Search"
-            case .web: "Fetch"; case .task: "Task"; case .question: "Ask"; case .other: ""
-            }
-        }
         /// What the pet says it is doing.
         var activity: String {
             switch self {
             case .read: "Reading files"; case .edit: "Editing code"; case .write: "Writing a file"
-            case .command: "Running a command"; case .search: "Searching the code"; case .web: "Browsing the web"
-            case .task: "Delegating to a subagent"; case .question: "Has a question"; case .other: "Using a tool"
-            }
-        }
-        /// Plural noun for the activity legend.
-        var noun: String {
-            switch self {
-            case .read: "reads"; case .edit: "edits"; case .write: "writes"; case .command: "commands"
-            case .search: "searches"; case .web: "web"; case .task: "subagents"; case .question: "questions"; case .other: "other"
+            case .command: "Executing"; case .search: "Searching the code"; case .web: "Researching"
+            case .task: "Asking a helper"; case .question: "Has a question"; case .other: "Using a tool"
             }
         }
         /// One hue per kind, tuned to read on the black panel.
@@ -100,10 +88,96 @@ struct AgentStep: Identifiable, Equatable {
         return (dir as NSString).abbreviatingWithTildeInPath
     }
 
+    /// What the step does, in words for someone who does not read code.
     var title: String {
-        let s = subject.hasPrefix("/") ? URL(fileURLWithPath: subject).lastPathComponent : subject
-        let head = kind == .other ? tool : kind.verb
-        return s.isEmpty ? head : "\(head) \(s)"
+        let file = subject.hasPrefix("/") ? URL(fileURLWithPath: subject).lastPathComponent : subject
+        switch kind {
+        case .read: return file.isEmpty ? "Reading files" : "Reading \(file)"
+        case .edit: return file.isEmpty ? "Updating code" : "Updating \(file)"
+        case .write: return file.isEmpty ? "Creating a file" : "Creating \(file)"
+        case .command: return Self.describe(command: subject)
+        case .search: return subject.isEmpty ? "Searching the project" : "Looking for \u{201C}\(subject)\u{201D}"
+        case .web:
+            if tool.localizedCaseInsensitiveContains("search") { return subject.isEmpty ? "Researching online" : "Researching \u{201C}\(subject)\u{201D}" }
+            return URL(string: subject)?.host.map { "Reading \($0)" } ?? "Reading a web page"
+        case .task: return subject.isEmpty ? "Asking a helper agent" : "Helper: \(subject)"
+        case .question: return "Asking you a question"
+        case .other: return Self.describe(tool: tool, subject: subject)
+        }
+    }
+
+    /// First rule whose pattern matches the command; `rtk git push` still reads as git.
+    private static let commandRules: [(String, String)] = [
+        ("Saving a checkpoint", #"\bgit (commit|add)\b"#),
+        ("Sharing changes", #"\bgit push\b|\bgh pr\b"#),
+        ("Checking the change history", #"\bgit\b"#),
+        ("Running tests", #"\b(test|tests|pytest|jest|vitest|rspec|selftest)\b"#),
+        ("Building the project", #"\b(build|make|tsc|xcodebuild|compile|cargo b)\b"#),
+        ("Installing packages", #"\b(install|npm i|pnpm add|yarn add|pip|brew|pod)\b"#),
+        ("Deleting files", #"\brm\b"#),
+        ("Downloading from the web", #"\b(curl|wget)\b"#),
+        ("Moving files", #"\b(mv|cp|mkdir)\b"#),
+        ("Looking through files", #"\b(ls|cat|find|grep|rg|head|tail|wc|sed|tree)\b"#),
+    ]
+
+    static func describe(command: String) -> String {
+        commandRules.first { command.range(of: $0.1, options: [.regularExpression, .caseInsensitive]) != nil }?.0 ?? "Running a command"
+    }
+
+    /// `mcp__github__create_issue` → "Using Github: create issue"; other tools by name.
+    static func describe(tool: String, subject: String) -> String {
+        let parts = tool.components(separatedBy: "__")
+        if parts.count >= 3, parts[0] == "mcp" {
+            let server = parts[1]
+            // Connector IDs are UUIDs, which mean nothing to a reader.
+            let app = server.count > 24 || server.filter(\.isNumber).count > 4 ? "a connected app" : humanize(server).capitalized
+            return "Using \(app): \(humanize(parts[2...].joined(separator: " ")))"
+        }
+        switch tool {
+        case "Skill": return subject.isEmpty ? "Using a skill" : "Using the \(subject) skill"
+        case "EnterPlanMode": return "Making a plan"
+        case "ExitPlanMode": return "Sharing the plan"
+        default: return "Using \(humanize(tool))"
+        }
+    }
+
+    /// snake_case, kebab-case and CamelCase to lowercase words.
+    static func humanize(_ s: String) -> String {
+        var out = ""
+        for (i, c) in s.enumerated() {
+            if c == "_" || c == "-" { out.append(" "); continue }
+            if c.isUppercase, i > 0, let p = out.last, p.isLowercase { out.append(" ") }
+            out.append(c)
+        }
+        return out.lowercased()
+    }
+}
+
+/// One item of the agent's own task list (Claude Code's TodoWrite, or TaskCreate / TaskUpdate).
+struct AgentTodo: Equatable {
+    enum Status: String { case pending, inProgress = "in_progress", completed, deleted }
+    var id: String
+    var text: String
+    /// Present-tense form shown while the item runs ("Running tests").
+    var active: String
+    var status: Status = .pending
+
+    var label: String { status == .inProgress && !active.isEmpty ? active : text }
+}
+
+/// Which coding agent sent the events. Each one has its own mascot.
+enum Harness: String, Codable, CaseIterable {
+    case claude, codex, gemini
+    var name: String { switch self { case .claude: "Claude Code"; case .codex: "Codex"; case .gemini: "Gemini CLI" } }
+    var short: String { switch self { case .claude: "Claude"; case .codex: "Codex"; case .gemini: "Gemini" } }
+    var tint: Color { switch self { case .claude: Theme.claude; case .codex: Color(hex: 0xE6E6E6); case .gemini: Color(hex: 0x6E9BFF) } }
+
+    /// Gemini CLI uses its own event names; every agent keeps transcripts in its own dot folder.
+    init(payload o: [String: Any], event: String) {
+        let transcript = o["transcript_path"] as? String ?? ""
+        if transcript.contains("/.gemini/") || ["BeforeTool", "AfterTool", "BeforeAgent", "AfterAgent"].contains(event) { self = .gemini }
+        else if transcript.contains("/.codex/") { self = .codex }
+        else { self = .claude }
     }
 }
 
@@ -114,11 +188,16 @@ struct HookEvent {
         case toolStart(AgentStep.Kind, tool: String, subject: String)
         case toolEnd(tool: String, failed: Bool)
         case attention(String, permission: Bool)
+        /// TodoWrite: the whole list. TaskCreate / TaskUpdate: one item.
+        case plan([AgentTodo])
+        case planAdd(text: String, active: String)
+        case planUpdate(id: String, status: AgentTodo.Status)
         case stop, end, other
     }
     var sessionID: String
     var cwd: String
     var toolUseID: String?
+    var harness: Harness
     var kind: Kind
 
     init?(json data: Data) {
@@ -127,24 +206,38 @@ struct HookEvent {
         sessionID = sid
         cwd = o["cwd"] as? String ?? ""
         toolUseID = o["tool_use_id"] as? String
+        harness = Harness(payload: o, event: name)
         let tool = o["tool_name"] as? String ?? ""
+        let input = o["tool_input"] as? [String: Any] ?? [:]
+        func text(_ key: String) -> String { String((input[key] as? String ?? "").prefix(200)) }
         switch name {
-        case "UserPromptSubmit":
+        case "UserPromptSubmit", "BeforeAgent":
             let p = (o["prompt"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             kind = .prompt(String(p.prefix(600)))
-        case "PreToolUse":
-            let input = o["tool_input"] as? [String: Any] ?? [:]
-            let raw = ["file_path", "notebook_path", "command", "pattern", "url", "query", "description", "path"]
+        case "PreToolUse" where tool == "TodoWrite":
+            let todos = (input["todos"] as? [[String: Any]] ?? []).prefix(50).enumerated().map { i, t in
+                AgentTodo(id: "\(i + 1)", text: String((t["content"] as? String ?? "").prefix(200)),
+                          active: String((t["activeForm"] as? String ?? "").prefix(200)),
+                          status: AgentTodo.Status(rawValue: t["status"] as? String ?? "") ?? .pending)
+            }
+            kind = .plan(Array(todos))
+        case "PreToolUse" where tool == "TaskCreate":
+            kind = .planAdd(text: text("subject"), active: text("activeForm"))
+        case "PreToolUse" where tool == "TaskUpdate":
+            let id = input["taskId"] as? String ?? (input["taskId"] as? Int).map(String.init) ?? ""
+            if let st = AgentTodo.Status(rawValue: text("status")) { kind = .planUpdate(id: id, status: st) } else { kind = .other }
+        case "PreToolUse", "BeforeTool":
+            let raw = ["file_path", "absolute_path", "notebook_path", "command", "pattern", "url", "query", "description", "path", "skill", "prompt"]
                 .lazy.compactMap { input[$0] as? String }.first ?? ""
             kind = .toolStart(AgentStep.Kind(tool: tool), tool: tool, subject: String(raw.split(separator: "\n").first ?? ""))
-        case "PostToolUse":
+        case "PostToolUse", "AfterTool":
             let r = o["tool_response"] as? [String: Any]
             kind = .toolEnd(tool: tool, failed: (r?["is_error"] as? Bool) == true || (r?["success"] as? Bool) == false)
         case "Notification":
             let msg = o["message"] as? String ?? ""
             let type = o["notification_type"] as? String ?? ""
             kind = .attention(msg, permission: type == "permission_prompt" || msg.localizedCaseInsensitiveContains("permission"))
-        case "Stop": kind = .stop
+        case "Stop", "AfterAgent": kind = .stop
         case "SessionEnd": kind = .end
         default: kind = .other
         }
@@ -154,6 +247,7 @@ struct HookEvent {
 struct AgentSession: Identifiable, Equatable {
     let id: String
     var cwd: String
+    var harness: Harness = .claude
     /// First line of the latest prompt; `prompt` keeps the full text (capped).
     var title = ""
     var prompt = ""
@@ -169,11 +263,20 @@ struct AgentSession: Identifiable, Equatable {
     var kindCounts: [AgentStep.Kind: Int] = [:]
     var files: Set<String> = []
     var lastFailureAt: Date?
+    /// The agent's own task list; it spans turns, as it does in the agent.
+    var plan: [AgentTodo] = []
 
-    var project: String { cwd.isEmpty ? "Claude Code" : URL(fileURLWithPath: cwd).lastPathComponent }
+    var project: String { cwd.isEmpty ? harness.name : URL(fileURLWithPath: cwd).lastPathComponent }
+    var visiblePlan: [AgentTodo] { plan.filter { $0.status != .deleted } }
     var runningStep: AgentStep? { steps.last { $0.state == .running } }
+    /// What the agent waits for, in plain words: the step it wants to take, else its own message.
+    var attentionLine: String {
+        if phase == .needsPermission, let s = runningStep { return "OK to go ahead with \u{201C}\(s.title)\u{201D}?" }
+        return message.isEmpty ? "Waiting for your reply" : message
+    }
+
     var currentLine: String {
-        if phase.needsAttention { return message.isEmpty ? "Needs your input" : message }
+        if phase.needsAttention { return attentionLine }
         if let s = runningStep { return s.title }
         return phase == .thinking ? "Thinking…" : (steps.last?.title ?? title)
     }
@@ -204,6 +307,12 @@ struct AgentSession: Identifiable, Equatable {
             phase = .working; message = ""
         case .attention(let msg, let permission):
             phase = permission ? .needsPermission : .needsInput; message = msg
+        case .plan(let todos):
+            plan = todos
+        case .planAdd(let text, let active):
+            plan.append(AgentTodo(id: "\(plan.count + 1)", text: text, active: active))
+        case .planUpdate(let id, let status):
+            if let i = plan.firstIndex(where: { $0.id == id }) { plan[i].status = status }
         case .stop:
             phase = .done; message = ""
             for i in steps.indices where steps[i].state == .running { steps[i].state = .done; steps[i].endedAt = now }
@@ -224,6 +333,8 @@ struct AgentsSettings: Codable, Equatable {
     var notifyAttention = true
     var playsSound = false
     var showPet = true
+    /// Mascots walk over the desktop and drop out of the notch to tell you things.
+    var roams = true
 }
 
 extension AgentsSettings {
@@ -238,6 +349,7 @@ extension AgentsSettings {
         notifyAttention = try c.decodeIfPresent(Bool.self, forKey: .notifyAttention) ?? d.notifyAttention
         playsSound = try c.decodeIfPresent(Bool.self, forKey: .playsSound) ?? d.playsSound
         showPet = try c.decodeIfPresent(Bool.self, forKey: .showPet) ?? d.showPet
+        roams = try c.decodeIfPresent(Bool.self, forKey: .roams) ?? d.roams
         // Before 1.1, Grid was the default and was saved with any other change: move those to the new Focus view.
         if !c.contains(.showPet), layout == .grid { layout = .focus }
     }
@@ -283,7 +395,7 @@ final class AgentStore {
             sessions[oldest.id] = nil
             if selectedID == oldest.id { selectedID = nil }
         }
-        var s = sessions[e.sessionID] ?? AgentSession(id: e.sessionID, cwd: e.cwd)
+        var s = sessions[e.sessionID] ?? AgentSession(id: e.sessionID, cwd: e.cwd, harness: e.harness)
         let wasAttention = s.phase.needsAttention
         if !e.cwd.isEmpty { s.cwd = e.cwd }
         s.apply(e.kind, toolUseID: e.toolUseID)
@@ -379,6 +491,10 @@ final class AgentStore {
         let t0 = Date().addingTimeInterval(-94)
         var a = AgentSession(id: "demo1", cwd: "/Users/me/Notchly")
         a.apply(.prompt("Add a teleprompter tab with a countdown\nand speed control"), toolUseID: nil, at: t0)
+        a.apply(.plan([AgentTodo(id: "1", text: "Find where tabs are defined", active: "", status: .completed),
+                       AgentTodo(id: "2", text: "Add the countdown view", active: "", status: .completed),
+                       AgentTodo(id: "3", text: "Build and test", active: "Building and testing", status: .inProgress),
+                       AgentTodo(id: "4", text: "Update the README", active: "")]), toolUseID: nil, at: t0 + 1)
         a.apply(.toolStart(.search, tool: "Grep", subject: "NotchMode"), toolUseID: "t0", at: t0 + 3)
         a.apply(.toolEnd(tool: "Grep", failed: false), toolUseID: "t0", at: t0 + 4)
         a.apply(.toolStart(.read, tool: "Read", subject: "/Users/me/Notchly/Sources/Core/Design.swift"), toolUseID: "t1", at: t0 + 6)
@@ -392,7 +508,10 @@ final class AgentStore {
         b.apply(.prompt("Fix the header layout"), toolUseID: nil, at: t0 - 200)
         b.apply(.toolStart(.command, tool: "Bash", subject: "rm -rf dist"), toolUseID: "t4", at: t0 - 180)
         b.apply(.attention("Claude needs your permission to use Bash", permission: true), toolUseID: nil, at: t0 - 179)
-        sessions = [a.id: a, b.id: b]
+        var c = AgentSession(id: "demo3", cwd: "/Users/me/docs", harness: .gemini)
+        c.apply(.prompt("Research notch sizes for every MacBook"), toolUseID: nil, at: t0 - 30)
+        c.apply(.toolStart(.web, tool: "google_web_search", subject: "MacBook Pro notch height points"), toolUseID: "g1", at: t0 - 20)
+        sessions = [a.id: a, b.id: b, c.id: c]
         selectedID = a.id
     }
 }
@@ -608,6 +727,7 @@ enum AgentsFeature {
         AgentStore.shared.listening = AgentBridgeServer.start(path: AgentBridgeServer.socketPath) { data in
             DispatchQueue.main.async { MainActor.assumeIsolated { AgentStore.shared.receive(data) } }
         }
+        MascotRoamer.shared.start()
     }
 
     static func selfTest() {
@@ -636,26 +756,54 @@ enum AgentsFeature {
         assert(s.turns == 1 && s.toolCount == 2 && s.kindCounts[.edit] == 1 && s.kindCounts[.command] == 1 && s.files == ["/a/b.swift"])
         assert(AgentStore.mood([s], at: t0 + 3) == .working(.command))
         s.apply(post.kind, toolUseID: post.toolUseID, at: t0 + 4)
-        assert(s.steps[0].state == .done && s.steps[1].state == .running && s.currentLine == "Run swift build")
+        assert(s.steps[0].state == .done && s.steps[1].state == .running && s.currentLine == "Building the project")
         assert(s.steps[0].endedAt == t0 + 4 && s.steps[0].duration() == 3)
         s.apply(.toolEnd(tool: "Bash", failed: true), toolUseID: nil, at: t0 + 5)
         assert(s.failures == 1 && s.steps[1].state == .failed && AgentStore.mood([s], at: t0 + 6) == .oops)
         assert(AgentStore.mood([s], at: t0 + 20) == .thinking)
         s.apply(perm.kind, toolUseID: nil, at: t0 + 21)
         assert(s.phase == .needsPermission && s.currentLine.contains("permission") && AgentStore.mood([s], at: t0 + 21) == .alert)
+        assert(MascotWalker.note([s], now: t0 + 21) == "proj: Claude needs your permission to use Bash")
+        var asking = s
+        asking.apply(bash.kind, toolUseID: nil, at: t0 + 22)
+        asking.apply(perm.kind, toolUseID: nil, at: t0 + 22)
+        assert(asking.attentionLine == "OK to go ahead with \u{201C}Building the project\u{201D}?")
         s.apply(ev(#"{"hook_event_name":"Stop","session_id":"s1"}"#).kind, toolUseID: nil, at: t0 + 30)
         assert(s.phase == .done && s.steps.allSatisfy { $0.state != .running } && s.elapsed(at: t0 + 999) == 30)
         assert(AgentStore.mood([s], at: t0 + 32) == .celebrating && AgentStore.mood([s], at: t0 + 60) == .idle)
+        assert(MascotWalker.note([s], now: t0 + 32) == "Done! Fix the bug" && MascotWalker.note([s], now: t0 + 60) == nil)
         assert(AgentStore.mood([s], at: t0 + 600) == .sleeping && AgentStore.mood([], at: t0) == .sleeping)
         s.apply(ev(#"{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"Again"}"#).kind, toolUseID: nil, at: t0 + 40)
         assert(s.turns == 2 && s.toolCount == 0 && s.files.isEmpty && s.steps.isEmpty)
-        assert(AgentStep(id: "", kind: .read, tool: "Read", subject: "/x/y.txt").title == "Read y.txt")
+        assert(AgentStep(id: "", kind: .read, tool: "Read", subject: "/x/y.txt").title == "Reading y.txt")
+        // Plain words: commands by intent, MCP tools by app and action, connector UUIDs hidden.
+        assert(AgentStep.describe(command: "rtk git push origin main") == "Sharing changes")
+        assert(AgentStep.describe(command: "npm test") == "Running tests" && AgentStep.describe(command: "./make-app.sh") == "Building the project")
+        assert(AgentStep.describe(command: "rm -rf dist") == "Deleting files" && AgentStep.describe(command: "echo hi") == "Running a command")
+        assert(AgentStep(id: "", kind: .other, tool: "mcp__github__create_issue", subject: "").title == "Using Github: create issue")
+        assert(AgentStep(id: "", kind: .other, tool: "mcp__1a59c906-04da-521d-bda7-7f71b9f9e01c__batch", subject: "").title == "Using a connected app: batch")
+        assert(AgentStep(id: "", kind: .web, tool: "WebFetch", subject: "https://claude.com/x").title == "Reading claude.com")
+        assert(AgentStep.humanize("NotebookEdit") == "notebook edit")
+
+        // Harness from the payload; Gemini event names map to the same phases.
+        let gem = ev(#"{"hook_event_name":"BeforeTool","session_id":"g","tool_name":"run_shell_command","tool_input":{"command":"pytest"}}"#)
+        assert(gem.harness == .gemini && gem.kind == .toolStart(.command, tool: "run_shell_command", subject: "pytest"))
+        assert(ev(#"{"hook_event_name":"Stop","session_id":"c","transcript_path":"/u/.codex/s.jsonl"}"#).harness == .codex && p.harness == .claude)
+
+        // Task list: TodoWrite replaces it, TaskCreate / TaskUpdate edit it; not shown as steps.
+        var t = AgentSession(id: "t", cwd: "")
+        t.apply(ev(#"{"hook_event_name":"PreToolUse","session_id":"t","tool_name":"TodoWrite","tool_input":{"todos":[{"content":"Fix it","activeForm":"Fixing it","status":"in_progress"},{"content":"Test","status":"pending"}]}}"#).kind, toolUseID: nil)
+        assert(t.plan.count == 2 && t.plan[0].label == "Fixing it" && t.plan[1].status == .pending && t.steps.isEmpty)
+        t.apply(ev(#"{"hook_event_name":"PreToolUse","session_id":"t","tool_name":"TaskCreate","tool_input":{"subject":"Ship","activeForm":"Shipping"}}"#).kind, toolUseID: nil)
+        t.apply(ev(#"{"hook_event_name":"PreToolUse","session_id":"t","tool_name":"TaskUpdate","tool_input":{"taskId":"3","status":"completed"}}"#).kind, toolUseID: nil)
+        t.apply(ev(#"{"hook_event_name":"PreToolUse","session_id":"t","tool_name":"TaskUpdate","tool_input":{"taskId":"1","status":"deleted"}}"#).kind, toolUseID: nil)
+        assert(t.plan[2].text == "Ship" && t.plan[2].status == .completed && t.visiblePlan.count == 2)
         let nested = AgentStep(id: "", kind: .edit, tool: "Edit", subject: "/tmp/proj/Sources/App/main.swift")
         assert(nested.detail(relativeTo: "/tmp/proj") == "Sources/App" && AgentStep(id: "", kind: .edit, tool: "Edit", subject: "/tmp/proj/a.swift").detail(relativeTo: "/tmp/proj") == nil)
 
         // Settings saved by older versions decode, and pre-pet Grid moves to Focus.
         let old = try! JSONDecoder().decode(AgentsSettings.self, from: Data(#"{"enabled":true,"layout":"grid","showWorkingActivity":false,"notifyFinished":true,"notifyAttention":true,"playsSound":true}"#.utf8))
-        assert(old.layout == .focus && old.playsSound && !old.showWorkingActivity && old.showPet)
+        assert(old.layout == .focus && old.playsSound && !old.showWorkingActivity && old.showPet && old.roams)
         let new = try! JSONDecoder().decode(AgentsSettings.self, from: JSONEncoder().encode(AgentsSettings(layout: .grid, showPet: false)))
         assert(new.layout == .grid && !new.showPet)
 
@@ -756,8 +904,12 @@ struct AgentsPane: View {
                     }.labelsHidden().pickerStyle(.segmented).frame(width: 190)
                 }
                 Divider()
-                SettingsRow(title: "Claude pet", subtitle: "A companion that reacts as the agent thinks, works, needs you and finishes.") {
+                SettingsRow(title: "Mascots", subtitle: "One per agent (Claude, Codex, Gemini). It reacts as the agent thinks, works, needs you and finishes.") {
                     Toggle("", isOn: s.binding(\.showPet)).labelsHidden().toggleStyle(.switch)
+                }
+                Divider()
+                SettingsRow(title: "Roam the screen", subtitle: "Mascots walk on your windows and drop out of the notch when an agent needs you or finishes.") {
+                    Toggle("", isOn: s.binding(\.roams)).labelsHidden().toggleStyle(.switch).disabled(!s.value.showPet)
                 }
             }
             SettingsCard(title: "Notch alerts") {
