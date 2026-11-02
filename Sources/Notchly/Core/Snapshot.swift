@@ -8,6 +8,23 @@ enum Snapshot {
         try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
         let notch = CGSize(width: 185, height: 32)   // 14" MacBook Pro camera housing
 
+        /// AppKit render: unlike ImageRenderer it draws ScrollView content (the agents checklist and grid).
+        func renderHosted(_ name: String, _ model: NotchModel) {
+            let size = CGSize(width: 900, height: model.shapeSize.height + 30)
+            let host = NSHostingView(rootView: ZStack(alignment: .top) {
+                LinearGradient(colors: [Color(hex: 0x3B1278), Color(hex: 0x12061F)], startPoint: .top, endPoint: .bottom)
+                NotchRootView(model: model)
+            }.frame(width: size.width, height: size.height).preferredColorScheme(.dark))
+            let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: .borderless, backing: .buffered, defer: false)
+            window.contentView = host
+            host.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+            guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { print("fail", name); return }
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: out.appendingPathComponent("\(name).png"))
+            print("wrote", name)
+        }
+
         func render(_ name: String, _ model: NotchModel, wallpaper: Bool = true) {
             let size = CGSize(width: 900, height: model.isOpen ? model.shapeSize.height + 30 : 70)
             let view = ZStack(alignment: .top) {
@@ -72,16 +89,22 @@ enum Snapshot {
         let grid = NotchModel(screenID: 0, notchSize: notch, hasPhysicalNotch: true)
         grid.mode = .agents
         grid.isOpen = true
-        render("open-agents-grid", grid)
+        renderHosted("open-agents-grid", grid)
+        AgentsFeature.settings.value.layout = .focus
+        renderHosted("open-agents-focus", grid)
         AgentsFeature.settings.value.layout = layout
 
         let moods: [(String, PetMood)] = [("sleeping", .sleeping), ("idle", .idle), ("thinking", .thinking), ("working-edit", .working(.edit)),
                                           ("working-command", .working(.command)), ("alert", .alert), ("celebrating", .celebrating), ("oops", .oops)]
-        save("pet-moods", HStack(spacing: 8) {
-            ForEach(moods.indices, id: \.self) { i in
-                VStack(spacing: 4) {
-                    PetView(mood: moods[i].1, size: 120, animated: false)
-                    Text(moods[i].0).font(Theme.caption).foregroundStyle(.white)
+        save("pet-moods", VStack(alignment: .leading, spacing: 8) {
+            ForEach(Harness.allCases, id: \.self) { h in
+                HStack(spacing: 8) {
+                    ForEach(moods.indices, id: \.self) { i in
+                        VStack(spacing: 4) {
+                            PetView(mood: moods[i].1, harness: h, size: 120, animated: false)
+                            Text("\(h.short) \(moods[i].0)").font(Theme.caption).foregroundStyle(.white)
+                        }
+                    }
                 }
             }
         }.padding(16).background(.black))

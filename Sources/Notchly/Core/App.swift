@@ -40,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotchManager.shared.start()
         setUpStatusItem()
         updateHotKeys()
+        if CommandLine.arguments.contains("--install-update") { Updates.installLatestNow() } else { Updates.start() }
         // First launch: an agent app has no Dock icon or window, so greet with the welcome tour.
         if !UserDefaults.standard.bool(forKey: "didShowWelcome") || CommandLine.arguments.contains("--onboarding") {
             UserDefaults.standard.set(true, forKey: "didShowWelcome")
@@ -62,6 +63,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if CommandLine.arguments.contains("--settings") { showSettings() }
     }
+
+    func applicationWillTerminate(_ notification: Notification) { Updates.installOnQuit() }
 
     /// Opening the app again (Finder, Spotlight, Launchpad) while it runs shows Settings; there is no Dock icon to click.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

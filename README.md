@@ -34,7 +34,7 @@ colors) were measured from NotchNook's app and website; the [table below](#desig
 | Tray | 4 | Drop files on the notch; drag them out, AirDrop or share them later |
 | Prompter | 5 | A teleprompter right under the camera, with countdown and speed control |
 | Clipboard | 6 | Searchable history of text, links, colors, images and files, with favorites |
-| Agents | 7 | Each Claude Code session live: a step timeline with durations, files changed, a tool mix, an alert when it needs you, and a Claude pet that acts out what the agent is doing |
+| Agents | 7 | Each coding agent session live, in plain words: the agent's plan as a checklist, each step ("Reading index.html", "Running tests") with a check or spinner, files changed, and an alert when it needs you. A mascot for each agent (Claude Code, Codex, Gemini CLI) acts out what it is doing, walks on your windows and drops out of the notch to tell you when it needs you or finishes |
 
 When the notch is closed it shows **live activities** beside the camera: the playing song, a running timer, an upcoming
 meeting, charging, an agent at work, a volume change, or the number of files in the tray.
@@ -59,7 +59,7 @@ Each release also has a `Notchly.zip.sha256` file. It catches a broken download 
 prove who built it: `shasum -a 256 -c Notchly.zip.sha256`.
 
 Notchly lives in the menu bar (no Dock icon). Open it again from Applications at any time to bring up Settings.
-To update, use **Check for Updates…** in the menu bar menu, then replace the app in Applications.
+From 1.2.0 on, Notchly updates itself: it checks GitHub at launch and every 6 hours, verifies the download (SHA-256, bundle ID, version, signature) and asks to restart. Turn it off in Settings › About. Version 1.1.0 and older can only open the release page: use **Check for Updates…**, download the zip and replace the app in Applications once.
 
 ### Connect Claude Code
 
@@ -67,6 +67,10 @@ The welcome tour, the empty Agents tab and Settings › Agents & AI Usage › **
 `PostToolUse`, `Notification`, `Stop` and `SessionEnd` hooks in `~/.claude/settings.json`. Your other hooks stay; the first
 time, the old file is backed up as `settings.json.notchly-backup`. New Claude Code sessions then show up in the Agents tab.
 **Remove hooks** takes them out again.
+
+Other agents: Notchly also reads Gemini CLI hook events and tells Codex sessions apart by their transcript path. It does
+not install hooks for them; point their hooks at the same script, `~/Library/Application Support/Notchly/notchly-hook.sh`.
+This path is not yet tested with real Gemini CLI or Codex sessions.
 
 ## Privacy
 
@@ -78,7 +82,7 @@ Notchly has no accounts, analytics or telemetry, and no third-party code. Your d
 | Weather widget | [Open-Meteo](https://open-meteo.com) | Approximate coordinates, or the place name you typed |
 | Synced lyrics (can be turned off) | [LRCLIB](https://lrclib.net) | Track title, artist, album and length |
 | Spotify album art | Spotify's image CDN | The artwork URL Spotify reports |
-| Check for Updates (only when you click) | GitHub API | Nothing beyond the request |
+| Updates (at launch and every 6 hours, can be turned off; or when you click) | GitHub API and release downloads | Nothing beyond the request |
 
 AI usage is read from local Claude Code and Codex logs. Agent events arrive over a Unix socket that only your user can open.
 
@@ -166,10 +170,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the code layout and guidelines, and [
 | Weather (Open-Meteo) | yes | no air quality |
 | Timers / Pomodoro + live activities | yes | no focus music, no rain ambience |
 | Prompter: auto-scroll, speed, countdown, scripts | yes | no voice-follow mode |
-| Agents: Claude Code hook bridge (unix socket), sessions, steps, alert activity | yes | hooks install only on a button press (tour, empty Agents tab, Settings); no approve/answer from the notch; no Codex hooks |
+| Agents: Claude Code hook bridge (unix socket), sessions, plan checklist, plain-language steps, alert activity, roaming mascots per agent | yes | hooks install only on a button press (tour, empty Agents tab, Settings); no approve/answer from the notch; no hook install for Codex or Gemini CLI; mascots are click-through |
 | AI usage (local token scan of Claude Code + Codex logs) | yes | no provider quota APIs, no USD cost |
 | Battery live activity | yes | |
-| Pockets, Terminal, Lock-screen widgets, Messages, Downloads, Video downloader, Bluetooth/AirPods, Liquid Glass shader, Onboarding, automatic updates | no | not built yet; updates are a manual Check for Updates |
+| Pockets, Terminal, Lock-screen widgets, Messages, Downloads, Video downloader, Bluetooth/AirPods, Liquid Glass shader, Onboarding | no | not built yet |
+| Automatic updates | yes | GitHub releases only; HTTPS + published SHA-256, no separate publisher signature |
 
 ## License
 

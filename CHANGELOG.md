@@ -4,6 +4,37 @@ All notable changes to Notchly. Versions follow [semantic versioning](https://se
 
 ## Unreleased
 
+## 1.2.0 — 2026-11-02
+
+Updating from 1.1.0: choose **Check for Updates…**, download the release and replace the app one more time. From 1.2.0
+on, Notchly updates itself.
+
+### Added
+- **Automatic updates.** Notchly checks GitHub at launch and every 6 hours, downloads a newer release, checks its
+  SHA-256, bundle ID, version and signature, and asks to restart; **Later** installs it when Notchly quits. **Check for
+  Updates…** now offers **Install and Restart**. Turn it off in Settings › About. When the app cannot replace itself
+  (for example when it runs from a read-only place), it opens the release page as before.
+- **A mascot for each coding agent.** Pixel characters for Claude Code, Codex and Gemini CLI replace the Claude pet. Each
+  one acts out its agent: it naps, thinks, reads, types while it runs commands, waves when the agent needs you,
+  celebrates when a turn finishes and sweats when a step fails.
+- **Roaming mascots.** While an agent has a session, its mascot walks along the bottom of the screen and hops onto the
+  tops of your windows. When the agent needs you or finishes, the mascot drops out of the notch with a speech bubble
+  ("website: OK to go ahead with “Deleting files”?"). Turn it off in Settings › Agents › **Roam the screen**. Under
+  Reduce Motion the mascot does not walk.
+- The Agents tab shows the agent's own plan (its to-do list) as a checklist with a "2 of 4 done" count.
+- Gemini CLI events (`BeforeAgent`, `BeforeTool`, `AfterTool`, `AfterAgent`) are read like Claude Code's.
+
+### Changed
+- **The Agents tab speaks plain words.** Steps read "Reading Design.swift", "Running tests", "Sharing changes" or
+  "Using Github: create issue" instead of tool names such as `Bash`, `Grep` or `mcp__github__create_issue`. Each step
+  has a check, a spinner or a cross. The tool mix bar is replaced by one line: steps, files changed and hiccups. The
+  tool name and its input stay in the tooltip.
+- A permission request names the step the agent wants to take ("OK to go ahead with “Deleting files”?").
+
+### Security
+- Mascot panels follow **Show notch in screenshots** live, so a bubble never shows in a screen share after the setting
+  is turned off.
+
 ## 1.1.0 — 2026-11-01
 
 ### Security

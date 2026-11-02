@@ -294,7 +294,11 @@ private struct AboutPane: View {
                 }
             }
             SettingsCard(title: "Project") {
-                SettingsRow(title: "Updates", subtitle: "Checks GitHub only when you click.") {
+                SettingsRow(title: "Install updates automatically", subtitle: "Checks GitHub at launch and every 6 hours, verifies the download, and asks before it restarts.") {
+                    Toggle("", isOn: Updates.automatic.binding(\.self)).labelsHidden().toggleStyle(.switch)
+                }
+                Divider()
+                SettingsRow(title: "Updates", subtitle: "Version \(AppInfo.version)") {
                     Button("Check for Updates…") { Updates.check() }
                 }
                 Divider()
