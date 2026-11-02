@@ -378,7 +378,7 @@ footer::before { content: ""; position: absolute; top: 0; left: 50%; width: min(
       <li><b>Move it</b>Drag <code>Notchly.app</code> to your Applications folder.</li>
       <li><b>Allow it once</b>Open the app. When macOS blocks it, go to System Settings, Privacy &amp; Security, and click Open Anyway. Or run <code>xattr -dr com.apple.quarantine /Applications/Notchly.app</code>.</li>
     </ol>
-    <p class="sub" style="font-size:15px">Notchly lives in the menu bar. To update, choose Check for Updates in its menu and replace the app. Each release lists a SHA-256 checksum so you can verify the download.</p>
+    <p class="sub" style="font-size:15px">Notchly lives in the menu bar and, from 1.2.0 on, updates itself after it checks the download. On 1.1.0, choose Check for Updates in its menu and replace the app once. Each release lists a SHA-256 checksum so you can verify the download.</p>
   </section>
 
   <section class="wrap" id="source">
@@ -389,7 +389,7 @@ footer::before { content: ""; position: absolute; top: 0; left: 50%; width: min(
         <ul class="list">
           <li>MIT license: use it, change it, ship your own version.</li>
           <li>Your data stays on your Mac, in Application Support.</li>
-          <li>Network use is limited to weather (Open-Meteo), lyrics (LRCLIB, can be turned off), Spotify album art, and update checks you start yourself.</li>
+          <li>Network use is limited to weather (Open-Meteo), lyrics (LRCLIB, can be turned off), Spotify album art, and update checks (at launch and every 6 hours, or off in Settings).</li>
         </ul>
       </div>
       <pre><span class="c"># build from source</span>

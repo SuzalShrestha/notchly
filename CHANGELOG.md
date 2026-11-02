@@ -4,7 +4,16 @@ All notable changes to Notchly. Versions follow [semantic versioning](https://se
 
 ## Unreleased
 
+## 1.2.0 — 2026-11-02
+
+Updating from 1.1.0: choose **Check for Updates…**, download the release and replace the app one more time. From 1.2.0
+on, Notchly updates itself.
+
 ### Added
+- **Automatic updates.** Notchly checks GitHub at launch and every 6 hours, downloads a newer release, checks its
+  SHA-256, bundle ID, version and signature, and asks to restart; **Later** installs it when Notchly quits. **Check for
+  Updates…** now offers **Install and Restart**. Turn it off in Settings › About. When the app cannot replace itself
+  (for example when it runs from a read-only place), it opens the release page as before.
 - **A mascot for each coding agent.** Pixel characters for Claude Code, Codex and Gemini CLI replace the Claude pet. Each
   one acts out its agent: it naps, thinks, reads, types while it runs commands, waves when the agent needs you,
   celebrates when a turn finishes and sweats when a step fails.
@@ -21,6 +30,10 @@ All notable changes to Notchly. Versions follow [semantic versioning](https://se
   has a check, a spinner or a cross. The tool mix bar is replaced by one line: steps, files changed and hiccups. The
   tool name and its input stay in the tooltip.
 - A permission request names the step the agent wants to take ("OK to go ahead with “Deleting files”?").
+
+### Security
+- Mascot panels follow **Show notch in screenshots** live, so a bubble never shows in a screen share after the setting
+  is turned off.
 
 ## 1.1.0 — 2026-11-01
 

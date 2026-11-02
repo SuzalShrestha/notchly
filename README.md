@@ -59,7 +59,7 @@ Each release also has a `Notchly.zip.sha256` file. It catches a broken download 
 prove who built it: `shasum -a 256 -c Notchly.zip.sha256`.
 
 Notchly lives in the menu bar (no Dock icon). Open it again from Applications at any time to bring up Settings.
-To update, use **Check for Updates…** in the menu bar menu, then replace the app in Applications.
+From 1.2.0 on, Notchly updates itself: it checks GitHub at launch and every 6 hours, verifies the download (SHA-256, bundle ID, version, signature) and asks to restart. Turn it off in Settings › About. Version 1.1.0 and older can only open the release page: use **Check for Updates…**, download the zip and replace the app in Applications once.
 
 ### Connect Claude Code
 
@@ -82,7 +82,7 @@ Notchly has no accounts, analytics or telemetry, and no third-party code. Your d
 | Weather widget | [Open-Meteo](https://open-meteo.com) | Approximate coordinates, or the place name you typed |
 | Synced lyrics (can be turned off) | [LRCLIB](https://lrclib.net) | Track title, artist, album and length |
 | Spotify album art | Spotify's image CDN | The artwork URL Spotify reports |
-| Check for Updates (only when you click) | GitHub API | Nothing beyond the request |
+| Updates (at launch and every 6 hours, can be turned off; or when you click) | GitHub API and release downloads | Nothing beyond the request |
 
 AI usage is read from local Claude Code and Codex logs. Agent events arrive over a Unix socket that only your user can open.
 
@@ -173,7 +173,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the code layout and guidelines, and [
 | Agents: Claude Code hook bridge (unix socket), sessions, plan checklist, plain-language steps, alert activity, roaming mascots per agent | yes | hooks install only on a button press (tour, empty Agents tab, Settings); no approve/answer from the notch; no hook install for Codex or Gemini CLI; mascots are click-through |
 | AI usage (local token scan of Claude Code + Codex logs) | yes | no provider quota APIs, no USD cost |
 | Battery live activity | yes | |
-| Pockets, Terminal, Lock-screen widgets, Messages, Downloads, Video downloader, Bluetooth/AirPods, Liquid Glass shader, Onboarding, automatic updates | no | not built yet; updates are a manual Check for Updates |
+| Pockets, Terminal, Lock-screen widgets, Messages, Downloads, Video downloader, Bluetooth/AirPods, Liquid Glass shader, Onboarding | no | not built yet |
+| Automatic updates | yes | GitHub releases only; HTTPS + published SHA-256, no separate publisher signature |
 
 ## License
 
