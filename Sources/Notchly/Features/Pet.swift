@@ -443,13 +443,13 @@ final class MascotWalker {
         self.slot = slot
         panel = NotchPanel(frame: CGRect(origin: .zero, size: Self.panelSize))
         panel.level = .statusBar   // under the notch panel (.statusBar + 1): hidden by the notch until it drops out
-        panel.sharingType = Settings.general.value.showNotchInScreenshots ? .readOnly : .none
         let host = NSHostingView(rootView: MascotPanelView(harness: harness, state: state))
         host.sizingOptions = []
         panel.contentView = host
         pos = .zero
         pos = notchHidden
         place()
+        panel.sharingType = Settings.general.value.showNotchInScreenshots ? .readOnly : .none
         panel.orderFrontRegardless()
         // Enter by dropping out of the notch.
         go(notchOut, duration: 0.55)
@@ -527,6 +527,9 @@ final class MascotWalker {
     }
 
     func tick(_ sessions: [AgentSession], now: Date) {
+        // Bubbles show project names and agent messages: follow the screenshot setting live, as the notch panels do.
+        let sharing: NSWindow.SharingType = Settings.general.value.showNotchInScreenshots ? .readOnly : .none
+        if panel.sharingType != sharing { panel.sharingType = sharing }
         let mood = AgentStore.mood(sessions, at: now)
         if mood != state.mood { state.mood = mood }
         let note = Self.note(sessions, now: now)
