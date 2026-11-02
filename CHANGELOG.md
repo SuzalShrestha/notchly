@@ -4,6 +4,13 @@ All notable changes to Notchly. Versions follow [semantic versioning](https://se
 
 ## Unreleased
 
+## 1.2.1 — 2026-11-02
+
+### Fixed
+
+- The "Notchly is ready" update alert now has **Later** as its default button. The alert takes keyboard focus, so
+  before this fix a Return key press meant for another app restarted Notchly into the update.
+
 ## 1.2.0 — 2026-11-02
 
 Updating from 1.1.0: choose **Check for Updates…**, download the release and replace the app one more time. From 1.2.0
