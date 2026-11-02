@@ -173,6 +173,7 @@ final class ClipboardStore {
     @ObservationIgnored private let thumbs = NSCache<NSString, NSImage>()
 
     private init() {
+        thumbs.countLimit = 100
         try? FileManager.default.createDirectory(at: Self.assets, withIntermediateDirectories: true,
                                                  attributes: [.posixPermissions: 0o700])
         DataFile.excludeFromBackup(Self.assets)
@@ -203,8 +204,9 @@ final class ClipboardStore {
         item.sourceBundleIdentifier = app?.bundleIdentifier
         if let png, !items.contains(where: { $0.contentHash == item.contentHash }) {
             item.assetPath = "\(item.id.uuidString).png"
-            let url = Self.assets.appendingPathComponent(item.assetPath!)
-            if (try? png.write(to: url)) != nil { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path) }
+            if let url = Self.assetURL(item.assetPath), (try? png.write(to: url)) != nil {
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            }
         }
         items = ClipboardParse.inserting(item, into: items)
         prune()
@@ -226,11 +228,18 @@ final class ClipboardStore {
             let kind: ClipboardItem.Kind = ClipboardParse.link(text) != nil ? .link : .text
             return (ClipboardItem(rawType: kind, textContent: text, contentHash: hash, byteCount: text.utf8.count), nil)
         }
-        // ponytail: PNG encode runs on the main thread; move off-main if huge screenshots stall the UI.
-        if let png = pb.data(forType: .png) ?? pb.data(forType: .tiff).flatMap({ NSBitmapImageRep(data: $0)?.representation(using: .png, properties: [:]) }) {
-            return (ClipboardItem(rawType: .image, contentHash: ClipboardParse.hash(png), byteCount: png.count), png)
+        // Any app or web page can write the pasteboard: check bytes and declared dimensions before decoding.
+        // ponytail: a TIFF within the limits is still re-encoded on the main thread; move off-main if that stalls.
+        let png: Data?
+        if let data = pb.data(forType: .png) {
+            png = UntrustedImage.isAcceptable(data) ? data : nil
+        } else if let data = pb.data(forType: .tiff) {
+            png = UntrustedImage.isAcceptable(data) ? NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:]) : nil
+        } else {
+            png = nil
         }
-        return nil
+        guard let png else { return nil }
+        return (ClipboardItem(rawType: .image, contentHash: ClipboardParse.hash(png), byteCount: png.count), png)
     }
 
     func prune() {
@@ -246,7 +255,7 @@ final class ClipboardStore {
         pb.clearContents()
         switch item.rawType {
         case .text, .link, .color: pb.setString(item.textContent ?? item.colorHex ?? "", forType: .string)
-        case .image: if let img = image(item) { pb.writeObjects([img]) }
+        case .image: if let url = Self.assetURL(item.assetPath), let png = try? Data(contentsOf: url) { pb.setData(png, forType: .png) }
         case .file: pb.writeObjects(item.originalPaths.map { URL(fileURLWithPath: $0) as NSURL })
         }
         lastChangeCount = pb.changeCount   // our own write is not a new capture
@@ -268,12 +277,21 @@ final class ClipboardStore {
         save()
     }
 
+    /// A small thumbnail for display; the full image stays on disk.
     func image(_ item: ClipboardItem) -> NSImage? {
-        guard let name = item.assetPath else { return nil }
+        guard let name = item.assetPath, let url = Self.assetURL(name) else { return nil }
         if let img = thumbs.object(forKey: name as NSString) { return img }
-        guard let img = NSImage(contentsOf: Self.assets.appendingPathComponent(name)) else { return nil }
+        guard let data = try? Data(contentsOf: url), let img = UntrustedImage.thumbnail(data) else { return nil }
         thumbs.setObject(img, forKey: name as NSString)
         return img
+    }
+
+    /// The asset file for a stored name, nil unless it is a plain "<uuid>.png" leaf. clipboard.json is only a
+    /// file on disk, so a name like "../../Documents" must never reach removeItem or a read.
+    static func assetURL(_ name: String?) -> URL? {
+        guard let name, name.hasSuffix(".png"), let id = UUID(uuidString: String(name.dropLast(4))),
+              name == "\(id.uuidString).png" else { return nil }
+        return assets.appendingPathComponent(name)
     }
 
     private func update(_ id: ClipboardItem.ID, _ change: (inout ClipboardItem) -> Void) {
@@ -283,7 +301,7 @@ final class ClipboardStore {
     }
 
     private func deleteAssets(of removed: [ClipboardItem]) {
-        for name in removed.compactMap(\.assetPath) { try? FileManager.default.removeItem(at: Self.assets.appendingPathComponent(name)) }
+        for url in removed.compactMap({ Self.assetURL($0.assetPath) }) { try? FileManager.default.removeItem(at: url) }
     }
 
     private func save() { DataFile.save(items, to: "clipboard.json", excludeFromBackup: true) }
@@ -337,6 +355,25 @@ enum ClipboardFeature {
         let img = NSImage(size: NSSize(width: 4, height: 4), flipped: false) { r in NSColor.red.setFill(); r.fill(); return true }
         precondition(put { pb.writeObjects([img]) } == .image)
         precondition(ClipboardStore.capture(pb)?.1?.starts(with: [0x89, 0x50, 0x4E, 0x47]) == true)   // PNG magic
+        // Images: a small file with huge dimensions is not kept, and thumbnails are downsampled.
+        func bilevelPNG(_ w: Int, _ h: Int) -> Data {
+            let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h, bitsPerSample: 1, samplesPerPixel: 1,
+                                       hasAlpha: false, isPlanar: false, colorSpaceName: .calibratedWhite, bytesPerRow: (w + 7) / 8, bitsPerPixel: 1)!
+            return rep.representation(using: .png, properties: [:])!
+        }
+        let bomb = bilevelPNG(8_000, 8_000)   // 64 MP in well under 1 MiB
+        precondition(bomb.count < 1 << 20 && !UntrustedImage.isAcceptable(bomb) && UntrustedImage.thumbnail(bomb) == nil)
+        precondition(put { pb.setData(bomb, forType: .png) } == nil)
+        let wide = bilevelPNG(2_000, 1_000)
+        precondition(UntrustedImage.isAcceptable(wide) && UntrustedImage.thumbnail(wide)?.size.width == 512)
+        precondition(!UntrustedImage.isAcceptable(Data("not an image".utf8)))
+        // Stored asset names are plain "<uuid>.png" leaves; a planted clipboard.json cannot point elsewhere.
+        let leaf = "\(UUID().uuidString).png"
+        precondition(ClipboardStore.assetURL(leaf)?.deletingLastPathComponent().standardizedFileURL == ClipboardStore.assets.standardizedFileURL)
+        for bad in ["../../../../Downloads", "../\(leaf)", "sub/\(leaf)", "/\(leaf)", "x.png", ".png", leaf.lowercased()] {
+            precondition(ClipboardStore.assetURL(bad) == nil, "asset name \(bad)")
+        }
+        precondition(ClipboardStore.assetURL(nil) == nil)
         precondition(put { pb.setString("   ", forType: .string) } == nil)
         precondition(put { pb.setString(String(repeating: "x", count: ClipboardSettings.maxTextBytes + 1), forType: .string) } == nil)
         // Skipping: concealed / auto-generated types and password managers, unless "Skip passwords" is off.

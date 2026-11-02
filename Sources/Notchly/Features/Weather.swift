@@ -48,7 +48,10 @@ enum WeatherTemperatureUnit: String, Codable, CaseIterable {
     case automatic, celsius, fahrenheit
     func format(_ celsius: Double) -> String {
         let f = self == .fahrenheit || (self == .automatic && Locale.current.measurementSystem == .us)
-        return "\(Int((f ? celsius * 9 / 5 + 32 : celsius).rounded()))°"
+        let t = f ? celsius * 9 / 5 + 32 : celsius
+        // The value comes from a server and a cached file; Int(_:) traps on anything out of range.
+        guard t.isFinite, abs(t) < 1_000 else { return "--°" }
+        return "\(Int(t.rounded()))°"
     }
 }
 
@@ -225,6 +228,8 @@ final class WeatherStore: NSObject, CLLocationManagerDelegate {
         precondition(WeatherTemperatureUnit.celsius.format(18.4) == "18°")
         precondition(WeatherTemperatureUnit.fahrenheit.format(0) == "32°")
         precondition(WeatherTemperatureUnit.fahrenheit.format(18.4) == "65°")
+        for bad in [1e300, -1e19, .infinity, .nan] { precondition(WeatherTemperatureUnit.celsius.format(bad) == "--°", "format \(bad)") }
+        precondition(WeatherTemperatureUnit.fahrenheit.format(1e308) == "--°")
 
         let json = """
         {"timezone":"America/Los_Angeles","current":{"time":"2026-10-31T10:15","interval":900,"temperature_2m":18.4,"weather_code":2,"is_day":1},

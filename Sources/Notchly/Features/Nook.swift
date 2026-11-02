@@ -365,3 +365,30 @@ enum Shell {
         return error == nil ? result?.stringValue : nil
     }
 }
+
+/// Bounds for image bytes from other apps, web pages and servers (pasteboard, artwork). A small compressed
+/// file can declare huge dimensions, so check the header before any decode and never decode at full size.
+enum UntrustedImage {
+    static let maxBytes = 20 << 20
+    static let maxPixels = 50_000_000      // a 6K-display screenshot is about 20 MP
+
+    /// Whether `data` is an image ImageIO can read whose header is within the byte and pixel limits.
+    static func isAcceptable(_ data: Data) -> Bool {
+        guard data.count <= maxBytes, let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let p = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+              let w = p[kCGImagePropertyPixelWidth] as? Int, let h = p[kCGImagePropertyPixelHeight] as? Int,
+              w > 0, h > 0 else { return false }
+        return Double(w) * Double(h) <= Double(maxPixels)
+    }
+
+    /// A decoded thumbnail no larger than `maxSide` pixels, or nil if `data` is not acceptable.
+    static func thumbnail(_ data: Data, maxSide: Int = 512) -> NSImage? {
+        guard isAcceptable(data), let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true, kCGImageSourceThumbnailMaxPixelSize: maxSide,
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, options as CFDictionary) else { return nil }
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+    }
+}

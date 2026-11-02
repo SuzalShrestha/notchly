@@ -58,10 +58,24 @@ enum MediaFeature {
         assert(LyricLine.index(in: lines, at: 13) == 1)
         assert(LyricLine.index(in: lines, at: 999) == 3)
 
-        let p = NowPlaying(parsing: "playing\tSong\tArtist\tAlbum\t201,5\t12.25\tid1\thttps://x/y.jpg", source: .spotify)
+        func line(_ f: String...) -> String { f.joined(separator: NowPlaying.separator) }
+        let p = NowPlaying(parsing: line("playing", "Song", "Artist", "Album", "201,5", "12.25", "id1", "https://x/y.jpg"), source: .spotify)
         assert(p?.isPlaying == true && p?.duration == 201.5 && p?.elapsed == 12.25 && p?.artworkURL == "https://x/y.jpg", "status parse")
         assert(NowPlaying(parsing: "", source: .appleMusic) == nil)
-        assert(NowPlaying(parsing: "paused\tA\tB\tC\t10\t1\tid\t", source: .appleMusic)?.isPlaying == false)
+        assert(NowPlaying(parsing: line("paused", "A", "B", "C", "10", "1", "id", ""), source: .appleMusic)?.isPlaying == false)
+        // Tabs in metadata are plain text; an extra separator rejects the line instead of shifting fields.
+        let tabbed = NowPlaying(parsing: line("playing", "A\tx\tx\t1\t1\tid\thttps://evil.test/a.png", "B", "C", "10", "1", "id", "https://i.scdn.co/image/a"), source: .spotify)
+        assert(tabbed?.artworkURL == "https://i.scdn.co/image/a" && tabbed?.trackID == "id", "tab in title")
+        assert(NowPlaying(parsing: line("playing", "A", "B", "C", "X", "1e300", "1", "id", "https://evil.test/a.png"), source: .spotify) == nil, "9 fields")
+        // Non-finite or absurd times become 0 (Int(_:) would trap in the lyrics query and the clock).
+        for bad in ["nan", "inf", "-inf", "1e300", "-5"] {
+            assert(NowPlaying(parsing: line("playing", "A", "B", "C", bad, bad, "id", ""), source: .appleMusic)?.duration == 0, "time \(bad)")
+        }
+        assert(MediaService.isSpotifyArtwork(URL(string: "https://i.scdn.co/image/ab67")!))
+        assert(MediaService.isSpotifyArtwork(URL(string: "https://image-cdn-ak.spotifycdn.com/image/ab67")!))
+        assert(!MediaService.isSpotifyArtwork(URL(string: "https://evil.test/a.png")!))
+        assert(!MediaService.isSpotifyArtwork(URL(string: "https://scdn.co.evil.test/a.png")!))
+        assert(!MediaService.isSpotifyArtwork(URL(string: "http://i.scdn.co/image/ab67")!))
 
         let red = NSImage(size: NSSize(width: 4, height: 4), flipped: false) { r in NSColor.red.setFill(); r.fill(); return true }
         let c = MediaService.averageColor(red).usingColorSpace(.sRGB)!
@@ -82,12 +96,21 @@ struct NowPlaying: Equatable {
     var trackID: String
     var artworkURL: String
 
-    /// Parses the tab-separated line returned by `MediaService.statusScript`.
+    /// Field separator of `MediaService.statusScript`: ASCII unit separator, not tab, because titles and tags
+    /// come from whoever published the track and can contain tabs.
+    static let separator = "\u{1F}"
+
+    /// Parses the line returned by `MediaService.statusScript`. Exactly 8 fields: an extra separator inside
+    /// metadata must not shift publisher text into the duration, id or artwork URL fields.
     init?(parsing line: String, source: MediaSource) {
-        let f = line.components(separatedBy: "\t")
-        guard f.count >= 8, f[0] != "stopped" else { return nil }
-        // AppleScript formats reals with the locale's decimal separator.
-        func num(_ s: String) -> Double { Double(s.replacingOccurrences(of: ",", with: ".")) ?? 0 }
+        let f = line.components(separatedBy: Self.separator)
+        guard f.count == 8, f[0] != "stopped" else { return nil }
+        // AppleScript formats reals with the locale's decimal separator. Int(_:) traps on NaN, infinity or huge
+        // values later (lyrics query, clock), so keep only a plausible finite time.
+        func num(_ s: String) -> Double {
+            let v = Double(s.replacingOccurrences(of: ",", with: ".")) ?? 0
+            return v.isFinite && v >= 0 && v < 1e7 ? v : 0
+        }
         title = f[1]; artist = f[2]; album = f[3]
         duration = num(f[4]); elapsed = num(f[5])
         isPlaying = f[0] == "playing"
@@ -202,7 +225,8 @@ final class MediaService {
             tell application "\(s.appName)"
                 if player state is stopped then return "stopped"
                 set t to current track
-                return (player state as text) & tab & (name of t) & tab & (artist of t) & tab & (album of t) & tab & \(duration) & tab & player position & tab & \(id) & tab & \(art)
+                set d to character id 31
+                return (player state as text) & d & (name of t) & d & (artist of t) & d & (album of t) & d & \(duration) & d & player position & d & \(id) & d & \(art)
             end tell
         end if
         return "stopped"
@@ -221,17 +245,38 @@ final class MediaService {
                 me.tint = Color(nsColor: MediaService.vivid(MediaService.averageColor(img)))
             }
         }
-        if t.source == .spotify, let url = URL(string: t.artworkURL), url.scheme == "https" {
-            Task.detached { set((try? await URLSession.shared.data(from: url)).flatMap { NSImage(data: $0.0) }) }
+        // Artwork is decoded as a bounded thumbnail off the main thread (UntrustedImage), never at full size.
+        if t.source == .spotify, let url = URL(string: t.artworkURL), Self.isSpotifyArtwork(url) {
+            Task.detached { set(await Self.download(url, limit: UntrustedImage.maxBytes).flatMap { UntrustedImage.thumbnail($0) }) }
         } else if t.source == .appleMusic {
             // Raw bytes straight from the Apple Event descriptor; no temp file needed.
             Self.queue.async {
                 let src = "if application \"Music\" is running then tell application \"Music\" to return raw data of artwork 1 of current track"
                 var err: NSDictionary?
                 let data = NSAppleScript(source: src)?.executeAndReturnError(&err).data
-                set(err == nil ? data.flatMap(NSImage.init(data:)) : nil)
+                set(err == nil ? data.flatMap { UntrustedImage.thumbnail($0) } : nil)
             }
         }
+    }
+
+    /// Spotify serves artwork from its own CDNs; anything else is not fetched (it would reveal the listener's IP).
+    nonisolated static func isSpotifyArtwork(_ url: URL) -> Bool {
+        guard url.scheme == "https", let host = url.host?.lowercased() else { return false }
+        return host.hasSuffix(".scdn.co") || host.hasSuffix(".spotifycdn.com")
+    }
+
+    /// The response body, or nil past `limit` bytes or on any error, so a server cannot grow memory without end.
+    nonisolated private static func download(_ url: URL, limit: Int) async -> Data? {
+        guard let (bytes, resp) = try? await URLSession.shared.bytes(from: url),
+              (resp as? HTTPURLResponse)?.statusCode == 200, resp.expectedContentLength <= limit else { return nil }
+        var data = Data()
+        do {
+            for try await byte in bytes {
+                data.append(byte)
+                if data.count > limit { return nil }
+            }
+        } catch { return nil }
+        return data
     }
 
     nonisolated static func averageColor(_ img: NSImage) -> NSColor {
