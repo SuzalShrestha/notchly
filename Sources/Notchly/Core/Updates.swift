@@ -100,10 +100,11 @@ enum Updates {
             let alert = NSAlert()
             alert.messageText = "Notchly \(r.version) is ready"
             alert.informativeText = "Restart Notchly to start using it, or it installs the next time Notchly quits. Your settings and data are kept."
-            alert.addButton(withTitle: "Restart Now")
+            // "Later" is the default: this alert takes focus unasked, so a stray Return must not restart the app.
             alert.addButton(withTitle: "Later")
+            alert.addButton(withTitle: "Restart Now")
             NSApp.activate(ignoringOtherApps: true)
-            if alert.runModal() == .alertFirstButtonReturn { install(relaunch: true) }
+            if alert.runModal() == .alertSecondButtonReturn { install(relaunch: true) }
         }
     }
 
