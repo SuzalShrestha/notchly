@@ -20,6 +20,11 @@ enum Features {
         CalendarFeature.selfTest()
         AgentsFeature.selfTest()
         AppInfo.selfTest()
+        // Settings saved before a field existed keep their values; the new field takes its default.
+        let old = Setting<GeneralSettings>.decode(Data(#"{"disableHaptics":true,"handleWidth":200}"#.utf8), default: GeneralSettings())
+        precondition(old?.disableHaptics == true && old?.handleWidth == 200 && old?.contentPadding == 12)
+        precondition(Setting<GeneralSettings>.decode(Data(#"{"notchOpenSpeed":"warp"}"#.utf8), default: GeneralSettings()) == nil)
+        precondition(Setting<Bool>.decode(Data("false".utf8), default: true) == false)
         print("selftest: ok")
     }
 }

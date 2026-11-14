@@ -286,6 +286,19 @@ struct AgentSession: Identifiable, Equatable {
         (phase.isBusy || phase.needsAttention ? now : updatedAt).timeIntervalSince(startedAt)
     }
 
+    /// A busy session with no event for this long is taken as dead: its agent was killed and sent no Stop or
+    /// SessionEnd. Keep it longer than any single tool call; a wrong guess corrects itself on the next event.
+    static let staleAfter: TimeInterval = 30 * 60
+
+    /// Ends a stale busy session; true when it changed. A session that waits for the user is never stale.
+    /// `updatedAt` stays, so the elapsed time stops at the last event.
+    mutating func expireIfStale(at now: Date) -> Bool {
+        guard phase.isBusy, now.timeIntervalSince(updatedAt) > Self.staleAfter else { return false }
+        phase = .idle
+        for i in steps.indices where steps[i].state == .running { steps[i].state = .failed; steps[i].endedAt = updatedAt }
+        return true
+    }
+
     mutating func apply(_ e: HookEvent.Kind, toolUseID: String?, at now: Date = Date()) {
         updatedAt = now
         switch e {
@@ -410,6 +423,16 @@ final class AgentStore {
         sessions[id] = nil
         if selectedID == id { selectedID = nil }
         refreshActivities()
+    }
+
+    /// Called once per minute: a killed agent must not leave "Working" in the notch for ever.
+    func expireStale(at now: Date = Date()) {
+        var changed = false
+        for (id, s) in sessions {
+            var s = s
+            if s.expireIfStale(at: now) { sessions[id] = s; changed = true }
+        }
+        if changed { refreshActivities() }
     }
 
     func clearFinished() {
@@ -728,6 +751,7 @@ enum AgentsFeature {
             DispatchQueue.main.async { MainActor.assumeIsolated { AgentStore.shared.receive(data) } }
         }
         MascotRoamer.shared.start()
+        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in MainActor.assumeIsolated { AgentStore.shared.expireStale() } }
     }
 
     static func selfTest() {
@@ -766,7 +790,15 @@ enum AgentsFeature {
         assert(MascotWalker.note([s], now: t0 + 21) == "proj: Claude needs your permission to use Bash")
         var asking = s
         asking.apply(bash.kind, toolUseID: nil, at: t0 + 22)
+        // A killed agent: busy with no event for 30 minutes becomes idle; the next event brings it back.
+        var dead = asking
+        assert(!dead.expireIfStale(at: t0 + 22 + 29 * 60) && dead.phase == .working)
+        assert(dead.expireIfStale(at: t0 + 22 + 31 * 60) && dead.phase == .idle && dead.runningStep == nil && dead.elapsed(at: t0 + 9999) == 22)
+        dead.apply(bash.kind, toolUseID: nil, at: t0 + 3000)
+        assert(dead.phase == .working)
         asking.apply(perm.kind, toolUseID: nil, at: t0 + 22)
+        var waiting = asking
+        assert(!waiting.expireIfStale(at: t0 + 99_999) && waiting.phase == .needsPermission)
         assert(asking.attentionLine == "OK to go ahead with \u{201C}Building the project\u{201D}?")
         s.apply(ev(#"{"hook_event_name":"Stop","session_id":"s1"}"#).kind, toolUseID: nil, at: t0 + 30)
         assert(s.phase == .done && s.steps.allSatisfy { $0.state != .running } && s.elapsed(at: t0 + 999) == 30)

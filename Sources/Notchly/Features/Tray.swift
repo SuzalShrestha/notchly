@@ -24,9 +24,36 @@ final class TrayStore {
     /// A tile is being dragged out of the tray; do not swap the row for the drop target.
     var draggingOut = false
 
+    /// Files on a disk that is not mounted: kept in tray.json and hidden until the disk comes back.
+    /// ponytail: a file on a disk that never returns stays in tray.json until Clear; add an age limit if that grows.
+    @ObservationIgnored private var offline: [TrayFile] = []
+
     private init() {
-        files = (DataFile.load("tray.json", as: [TrayFile].self) ?? []).compactMap(Self.resolve)
+        let saved = DataFile.load("tray.json", as: [TrayFile].self) ?? []
+        files = saved.compactMap(Self.resolve)
+        offline = saved.filter { r in !files.contains { $0.id == r.id } && Self.isOffline(r.bookmarkData) }
         save()
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didMountNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { TrayStore.shared.restoreOffline() }
+        }
+    }
+
+    private func restoreOffline() {
+        let back = offline.compactMap(Self.resolve)
+        guard !back.isEmpty else { return }
+        offline.removeAll { r in back.contains { $0.id == r.id } }
+        files += back
+        save()
+    }
+
+    /// The bookmark points into a volume that is not mounted now (so the file is away, not deleted).
+    static func isOffline(_ bookmark: Data) -> Bool {
+        URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: bookmark)?.path.map(isOnMissingVolume) ?? false
+    }
+
+    static func isOnMissingVolume(_ path: String) -> Bool {
+        let p = path.split(separator: "/")
+        return p.count >= 2 && p[0] == "Volumes" && !FileManager.default.fileExists(atPath: "/Volumes/\(p[1])")
     }
 
     /// Resolves the bookmark; nil when the file is gone.
@@ -49,10 +76,10 @@ final class TrayStore {
     }
 
     func remove(_ id: TrayFile.ID) { files.removeAll { $0.id == id }; save() }
-    func clear() { files.removeAll(); save() }
+    func clear() { files.removeAll(); offline.removeAll(); save() }
 
     private func save() {
-        DataFile.save(files, to: "tray.json")
+        DataFile.save(files + offline, to: "tray.json")
         updateActivity()
     }
 
@@ -98,6 +125,9 @@ enum TrayFeature {
         let gone = (try? URL(resolvingBookmarkData: rec.bookmarkData, options: .withoutUI, bookmarkDataIsStale: &stale))
             .map { FileManager.default.fileExists(atPath: $0.path) } ?? false
         precondition(!gone, "deleted tray file must not resolve to an existing path")
+        // Deleted is not offline: only a path in a volume that is not mounted keeps its record.
+        precondition(!TrayStore.isOffline(rec.bookmarkData) && !TrayStore.isOnMissingVolume("/Volumes") && !TrayStore.isOnMissingVolume("/tmp/a"))
+        precondition(TrayStore.isOnMissingVolume("/Volumes/notchly-no-such-disk/a.txt"))
     }
 }
 

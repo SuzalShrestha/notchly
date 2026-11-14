@@ -6,6 +6,15 @@ All notable changes to Notchly. Versions follow [semantic versioning](https://se
 
 ### Fixed
 
+- **Show on › Main display** now means the display with the menu bar. Before, it meant the display with keyboard
+  focus, so the notch could move to an external display when Settings was open there.
+- Settings saved by an older version are kept when a new version adds a setting; before, the whole group could go
+  back to its defaults.
+- An agent that was killed (no `Stop` or `SessionEnd` event) no longer shows "Working" for ever: after 30 minutes
+  with no event its session becomes idle. A session that waits for your answer is not changed.
+- Tray files on a disk that is not mounted are kept and come back when the disk is mounted; before, they were removed
+  from the tray at launch.
+- `--open <tab>` reads the tab that follows it, so it works together with other flags (`--open music --dock`).
 - Updates no longer leave the downloaded zip (about 1.5 MB) in the temp folder; it is deleted after it is unpacked.
 
 ## 1.2.1 — 2026-11-02

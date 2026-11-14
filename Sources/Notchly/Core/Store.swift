@@ -10,12 +10,22 @@ final class Setting<Value: Codable & Equatable> {
     init(_ key: String, default value: Value) {
         self.key = key
         let data = UserDefaults.standard.data(forKey: key)
-        if let data, let decoded = try? JSONDecoder().decode(Value.self, from: data) {
+        if let data, let decoded = Self.decode(data, default: value) {
             self.value = decoded
         } else {
             if let data { UserDefaults.standard.set(data, forKey: key + ".undecodable") }
             self.value = value
         }
+    }
+
+    /// Decodes saved JSON. A struct saved by an older version lacks the keys added since then, which the
+    /// synthesized decoder rejects: in that case the missing keys come from `fallback`, so an update keeps settings.
+    static func decode(_ data: Data, default fallback: Value) -> Value? {
+        if let v = try? JSONDecoder().decode(Value.self, from: data) { return v }
+        guard let saved = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let base = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(fallback))) as? [String: Any],
+              let merged = try? JSONSerialization.data(withJSONObject: base.merging(saved) { _, new in new }) else { return nil }
+        return try? JSONDecoder().decode(Value.self, from: merged)
     }
 
     private func save() {
