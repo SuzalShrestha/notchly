@@ -150,6 +150,7 @@ struct WidgetCard<Content: View>: View {
             .padding(padding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .cardSurface()
+            .spotlight()
     }
 }
 
@@ -267,7 +268,9 @@ struct EmptyState: View {
     var subtitle: String? = nil
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: symbol).font(.system(size: 22, weight: .semibold)).foregroundStyle(Theme.tertiaryText)
+            Image(systemName: symbol).font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.secondaryText)
+                .frame(width: 40, height: 40).background(Theme.chip.opacity(0.7), in: Circle())
+                .floating()
             Text(title).font(Theme.title(13)).foregroundStyle(Theme.secondaryText)
             if let subtitle { Text(subtitle).font(Theme.caption).foregroundStyle(Theme.tertiaryText).multilineTextAlignment(.center) }
         }

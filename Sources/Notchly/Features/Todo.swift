@@ -73,6 +73,7 @@ final class TodoStore {
         items[i].isCompleted.toggle()
         if items[i].isCompleted {
             completions.append(TodoCompletionEvent(taskUUID: id, completedAt: .now))
+            if items.allSatisfy(\.isCompleted) { Celebration.shared.fire() }
         } else if let j = completions.lastIndex(where: { $0.taskUUID == id }) {
             completions.remove(at: j)
         }

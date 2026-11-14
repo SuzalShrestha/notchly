@@ -4,6 +4,18 @@ All notable changes to Notchly. Versions follow [semantic versioning](https://se
 
 ## Unreleased
 
+### Added
+
+- **The notch is alive.** A soft glow under the notch tells you what happens: it breathes orange while an agent
+  waits for you, and takes the album color while music plays.
+- A light follows the pointer across each widget card.
+- Tabs come in from the side their icon is on, through a soft blur, with a light tap on the trackpad.
+- Nook widgets rise into place one after the other when the notch opens.
+- The closed notch swells a little under the pointer.
+- Confetti flies out of the notch when a timer ends or when you finish the last to-do.
+- Empty states have a floating icon; timer and battery digits roll when they change.
+- All of this is off when **Reduce Motion** is on in System Settings.
+
 ### Fixed
 
 - **Show on › Main display** now means the display with the menu bar. Before, it meant the display with keyboard
