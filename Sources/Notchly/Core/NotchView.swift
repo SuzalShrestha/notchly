@@ -8,13 +8,14 @@ struct NotchRootView: View {
         let shape = NotchShape(bottomRadius: NotchShape.bottomRadius(height: size.height, notch: model.notchSize),
                                earRadius: NotchShape.earRadius(size: size, notch: model.notchSize))
         ZStack(alignment: .top) {
+            NotchAura(shape: shape, isOpen: model.isOpen)
             shape
                 .fill(Theme.panel)
                 .shadow(color: .black.opacity(model.isOpen ? 0.55 : 0), radius: 14, y: 6)
             if model.isOpen {
                 OpenNotchContent(model: model, ear: shape.earRadius)
                     .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .scale(scale: 0.86, anchor: .top)).animation(Motion.open().delay(0.04)),
+                        insertion: .blurFade.combined(with: .scale(scale: 0.86, anchor: .top)).animation(Motion.open().delay(0.04)),
                         removal: .opacity.animation(.easeOut(duration: 0.12))))
             } else {
                 ClosedNotchContent(model: model, ear: shape.earRadius)
@@ -27,6 +28,12 @@ struct NotchRootView: View {
         .environment(model)
         .preferredColorScheme(.dark)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background {
+            // Behind the notch, so the pieces come out from under its bottom edge.
+            if let t0 = Celebration.shared.startedAt {
+                TimelineView(.animation) { ctx in Confetti(time: ctx.date.timeIntervalSince(t0), originY: size.height - 4) }
+            }
+        }
     }
 }
 
@@ -44,7 +51,7 @@ private struct ClosedNotchContent: View {
             .padding(.horizontal, 12 + ear)
             .frame(height: model.notchSize.height)
             .id(a.kind)
-            .transition(.opacity.combined(with: .scale(scale: 0.8)))
+            .transition(.blurFade.combined(with: .scale(scale: 0.8)))
         }
     }
 }
@@ -62,7 +69,7 @@ private struct OpenNotchContent: View {
                 .frame(width: model.shapeSize.width - pad * 2, height: model.mode.contentSize.height)
                 .padding(pad)
                 .id(model.mode)
-                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                .transition(.tab(forward: model.movesForward))
         }
         .padding(.horizontal, ear)
         .foregroundStyle(.white)
@@ -134,6 +141,7 @@ private struct TopBarStatus: View {
         if b.hasBattery {
             HStack(spacing: 4) {
                 Text("\(b.percent)%").font(Theme.caption.weight(.semibold)).monospacedDigit()
+                    .contentTransition(.numericText()).animation(Motion.snappy, value: b.percent)
                 Image(systemName: b.symbol)
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(b.isCharging ? Theme.green : (b.percent <= 20 ? .red : .white), .white.opacity(0.4))

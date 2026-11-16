@@ -101,6 +101,7 @@ final class TimerStore {
     private func expire(_ e: TimerEntry) {
         entries.removeAll { $0.id == e.id }
         changed()
+        Celebration.shared.fire()
         let s = Self.settings.value
         if s.playSound { sound = NSSound(named: s.expirySound) ?? NSSound(named: "Glass"); sound?.play() }
         let leading = Image(systemName: "bell.fill").font(.system(size: 13, weight: .bold)).foregroundStyle(Theme.accent)
@@ -158,8 +159,10 @@ private struct TimerClock: View {
     let size: CGFloat
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { ctx in
-            Text(TimerEntry.clock(entry.remaining(at: ctx.date)))
+            let clock = TimerEntry.clock(entry.remaining(at: ctx.date))
+            Text(clock)
                 .font(.system(size: size, weight: .semibold, design: .rounded).monospacedDigit())
+                .contentTransition(.numericText(countsDown: true)).animation(Motion.snappy, value: clock)
                 .foregroundStyle(Theme.accent)
                 .lineLimit(1).minimumScaleFactor(0.5)
         }

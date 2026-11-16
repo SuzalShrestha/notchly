@@ -4,8 +4,29 @@ All notable changes to Notchly. Versions follow [semantic versioning](https://se
 
 ## Unreleased
 
+### Added
+
+- **The notch is alive.** A soft glow under the notch tells you what happens: it breathes orange while an agent
+  waits for you, and takes the album color while music plays.
+- A light follows the pointer across each widget card.
+- Tabs come in from the side their icon is on, through a soft blur, with a light tap on the trackpad.
+- Nook widgets rise into place one after the other when the notch opens.
+- The closed notch swells a little under the pointer.
+- Confetti flies out of the notch when a timer ends or when you finish the last to-do.
+- Empty states have a floating icon; timer and battery digits roll when they change.
+- All of this is off when **Reduce Motion** is on in System Settings.
+
 ### Fixed
 
+- **Show on › Main display** now means the display with the menu bar. Before, it meant the display with keyboard
+  focus, so the notch could move to an external display when Settings was open there.
+- Settings saved by an older version are kept when a new version adds a setting; before, the whole group could go
+  back to its defaults.
+- An agent that was killed (no `Stop` or `SessionEnd` event) no longer shows "Working" for ever: after 30 minutes
+  with no event its session becomes idle. A session that waits for your answer is not changed.
+- Tray files on a disk that is not mounted are kept and come back when the disk is mounted; before, they were removed
+  from the tray at launch.
+- `--open <tab>` reads the tab that follows it, so it works together with other flags (`--open music --dock`).
 - Updates no longer leave the downloaded zip (about 1.5 MB) in the temp folder; it is deleted after it is unpacked.
 
 ## 1.2.1 — 2026-11-02

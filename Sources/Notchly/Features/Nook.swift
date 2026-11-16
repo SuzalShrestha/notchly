@@ -20,6 +20,11 @@ enum Features {
         CalendarFeature.selfTest()
         AgentsFeature.selfTest()
         AppInfo.selfTest()
+        // Settings saved before a field existed keep their values; the new field takes its default.
+        let old = Setting<GeneralSettings>.decode(Data(#"{"disableHaptics":true,"handleWidth":200}"#.utf8), default: GeneralSettings())
+        precondition(old?.disableHaptics == true && old?.handleWidth == 200 && old?.contentPadding == 12)
+        precondition(Setting<GeneralSettings>.decode(Data(#"{"notchOpenSpeed":"warp"}"#.utf8), default: GeneralSettings()) == nil)
+        precondition(Setting<Bool>.decode(Data("false".utf8), default: true) == false)
         print("selftest: ok")
     }
 }
@@ -102,8 +107,8 @@ struct NookView: View {
                 let fitUnit = (geo.size.width - gap * CGFloat(widgets.count - 1)) / total
                 let unit = max(fitUnit, 38)
                 let row = HStack(spacing: gap) {
-                    ForEach(widgets) { w in
-                        NookWidgetView(widget: w).frame(width: w.units * unit, height: geo.size.height)
+                    ForEach(Array(widgets.enumerated()), id: \.element) { i, w in
+                        NookWidgetView(widget: w).frame(width: w.units * unit, height: geo.size.height).entrance(i)
                     }
                 }
                 if unit > fitUnit {

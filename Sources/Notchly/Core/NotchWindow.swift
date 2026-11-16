@@ -96,7 +96,7 @@ final class NotchController {
         }
 
         if inside != model.hovering {
-            withAnimation(Motion.snappy) { model.hovering = inside }
+            withAnimation(Motion.respecting(Motion.bouncy)) { model.hovering = inside }
         }
         if inside {
             closeWork?.cancel(); closeWork = nil
@@ -164,7 +164,8 @@ final class NotchManager {
             let notched = screen.physicalNotchSize != nil
             switch g.displaySelection {
             case .notchedOnly where !notched: return nil
-            case .mainOnly where screen != NSScreen.main: return nil
+            // screens.first is the display with the menu bar; NSScreen.main is the one with keyboard focus.
+            case .mainOnly where screen != NSScreen.screens.first: return nil
             default: break
             }
             if !notched && !g.enableOnNonNotchScreens { return nil }

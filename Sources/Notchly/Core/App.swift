@@ -58,8 +58,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return event
         }
-        if CommandLine.arguments.contains("--open") {
-            NotchManager.shared.activeController?.model.open(CommandLine.arguments.last.flatMap(NotchMode.init(rawValue:)))
+        if let i = CommandLine.arguments.firstIndex(of: "--open") {
+            // The tab is the word after --open, so `--open music --dock` works too.
+            let tab = i + 1 < CommandLine.arguments.count ? NotchMode(rawValue: CommandLine.arguments[i + 1]) : nil
+            NotchManager.shared.activeController?.model.open(tab)
         }
         if CommandLine.arguments.contains("--settings") { showSettings() }
     }
