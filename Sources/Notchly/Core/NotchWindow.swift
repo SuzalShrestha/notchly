@@ -96,7 +96,7 @@ final class NotchController {
         }
 
         if inside != model.hovering {
-            withAnimation(Motion.snappy) { model.hovering = inside }
+            withAnimation(Motion.respecting(Motion.bouncy)) { model.hovering = inside }
         }
         if inside {
             closeWork?.cancel(); closeWork = nil

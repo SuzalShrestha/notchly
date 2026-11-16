@@ -3,6 +3,8 @@ import SwiftUI
 /// `Notchly --snapshot <dir>`: renders notch states to PNGs for visual checks without screen capture.
 @MainActor
 enum Snapshot {
+    nonisolated static let isRunning = CommandLine.arguments.contains("--snapshot")
+
     static func run(to dir: String) {
         let out = URL(fileURLWithPath: dir)
         try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
@@ -109,6 +111,7 @@ enum Snapshot {
             }
         }.padding(16).background(.black))
 
+        save("confetti", Confetti(time: 0.6, originY: 16).frame(width: 600, height: 280).background(.black))
         for page in OnboardingPage.allCases {
             save("onboarding-\(page.rawValue + 1)", OnboardingView(page: page) { _ in })
         }

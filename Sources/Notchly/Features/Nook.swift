@@ -107,8 +107,8 @@ struct NookView: View {
                 let fitUnit = (geo.size.width - gap * CGFloat(widgets.count - 1)) / total
                 let unit = max(fitUnit, 38)
                 let row = HStack(spacing: gap) {
-                    ForEach(widgets) { w in
-                        NookWidgetView(widget: w).frame(width: w.units * unit, height: geo.size.height)
+                    ForEach(Array(widgets.enumerated()), id: \.element) { i, w in
+                        NookWidgetView(widget: w).frame(width: w.units * unit, height: geo.size.height).entrance(i)
                     }
                 }
                 if unit > fitUnit {

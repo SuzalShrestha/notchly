@@ -68,6 +68,8 @@ final class NotchModel {
     var keyboardPinned = false
     /// Last mode the user picked; reopening returns there.
     @ObservationIgnored var lastMode: NotchMode = .nook
+    /// The tab being opened sits to the right of the current one in the dock: its content comes in from that side.
+    @ObservationIgnored private(set) var movesForward = true
     /// Set by the window controller: gives keyboard focus back when the notch closes.
     @ObservationIgnored var onClose: (() -> Void)?
 
@@ -87,10 +89,12 @@ final class NotchModel {
             let width = NotchMode.maxContentWidth + pad * 2
             return CGSize(width: max(width, notchSize.width + 260), height: topBarHeight + mode.contentSize.height + pad * 2)
         }
+        // The closed notch swells a little under the pointer: it shows that it reacts before it opens.
+        let peek: CGFloat = hovering && hasPhysicalNotch ? 1 : 0
         if let a = LiveActivityCenter.shared.current {
-            return CGSize(width: notchSize.width + a.leadingWidth + a.trailingWidth + 24, height: notchSize.height)
+            return CGSize(width: notchSize.width + a.leadingWidth + a.trailingWidth + 24 + peek * 8, height: notchSize.height + peek * 3)
         }
-        if hasPhysicalNotch || hovering { return notchSize }
+        if hasPhysicalNotch || hovering { return CGSize(width: notchSize.width + peek * 10, height: notchSize.height + peek * 4) }
         // Notchless screens rest as a thin handle (generalSettings.handleSize = [184, 8]).
         let g = Settings.general.value
         return CGSize(width: g.handleWidth, height: g.handleHeight)
@@ -99,6 +103,7 @@ final class NotchModel {
     func open(_ mode: NotchMode? = nil) {
         let target = mode ?? lastMode
         guard !isOpen || self.mode != target else { return }
+        aim(at: target)
         if !isOpen, !Settings.general.value.disableHaptics {
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
@@ -111,7 +116,16 @@ final class NotchModel {
     func select(_ mode: NotchMode) {
         lastMode = mode
         keyboardPinned = false
+        aim(at: mode)
+        if mode != self.mode, !Settings.general.value.disableHaptics {
+            NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+        }
         withAnimation(Motion.snappy) { self.mode = mode }
+    }
+
+    private func aim(at target: NotchMode) {
+        let all = NotchMode.allCases
+        movesForward = (all.firstIndex(of: target) ?? 0) >= (all.firstIndex(of: mode) ?? 0)
     }
 
     func close() {
