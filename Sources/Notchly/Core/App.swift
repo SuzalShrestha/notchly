@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             exit(0)
         }
         Features.start()
+        License.shared.start()
         PowerMonitor.shared.start()
         NotchManager.shared.start()
         setUpStatusItem()
@@ -85,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
+        menu.addItem(withTitle: "Notchly Pro…", action: #selector(showPro), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Welcome Tour…", action: #selector(showOnboarding), keyEquivalent: "").target = self
         menu.addItem(.separator())
@@ -118,6 +120,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func showPro() { openSettings(.pro) }
+
+    func openSettings(_ section: SettingsSection) {
+        UserDefaults.standard.set(section.rawValue, forKey: "settingsSection")
+        showSettings()
     }
 
     @objc func showOnboarding() {
