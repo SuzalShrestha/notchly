@@ -32,14 +32,21 @@ colors) were measured from NotchNook's app and website; the [table below](#desig
 | Music | 2 | Artwork, scrubber, transport and synced lyrics for Spotify and Apple Music |
 | Calendar | 3 | Day strip, agenda, Join buttons for Meet, Zoom, Teams and Webex, and a quick event composer |
 | Tray | 4 | Drop files on the notch; drag them out, AirDrop or share them later |
-| Prompter | 5 | A teleprompter right under the camera, with countdown and speed control |
+| Prompter (Pro) | 5 | A teleprompter right under the camera, with countdown and speed control |
 | Clipboard | 6 | Searchable history of text, links, colors, images and files, with favorites |
-| Agents | 7 | Each coding agent session live, in plain words: the agent's plan as a checklist, each step ("Reading index.html", "Running tests") with a check or spinner, files changed, and an alert when it needs you. A mascot for each agent (Claude Code, Codex, Gemini CLI) acts out what it is doing, walks on your windows and drops out of the notch to tell you when it needs you or finishes |
+| Agents (Pro) | 7 | Each coding agent session live, in plain words: the agent's plan as a checklist, each step ("Reading index.html", "Running tests") with a check or spinner, files changed, and an alert when it needs you. A mascot for each agent (Claude Code, Codex, Gemini CLI) acts out what it is doing, walks on your windows and drops out of the notch to tell you when it needs you or finishes |
 
 When the notch is closed it shows **live activities** beside the camera: the playing song, a running timer, an upcoming
 meeting, charging, an agent at work, a volume change, or the number of files in the tray.
 
 On a Mac without a notch, or on an external display, Notchly shows a thin handle at the top of the screen instead.
+
+## Free and Pro
+
+Notchly is free to use. **Notchly Pro** unlocks the Agents tab (with its mascots and agent live activities), the
+Prompter tab, and the AI Usage and Pulse widgets. Buy it from the website; Polar emails a license key, which you paste
+in Settings › Notchly Pro. Polar is the merchant of record (checkout, tax, receipts, refunds, subscriptions). To sell it,
+see [PRO.md](PRO.md).
 
 ## Install
 
@@ -74,7 +81,7 @@ This path is not yet tested with real Gemini CLI or Codex sessions.
 
 ## Privacy
 
-Notchly has no accounts, analytics or telemetry, and no third-party code. Your data stays in
+Notchly has no accounts, analytics or telemetry, and no third-party code. Pro is a license key, not an account. Your data stays in
 `~/Library/Application Support/Notchly` and the app's preferences. It connects to the network only for:
 
 | What | Service | Sends |
@@ -83,6 +90,7 @@ Notchly has no accounts, analytics or telemetry, and no third-party code. Your d
 | Synced lyrics (can be turned off) | [LRCLIB](https://lrclib.net) | Track title, artist, album and length |
 | Spotify album art | Spotify's image CDN | The artwork URL Spotify reports |
 | Updates (at launch and every 6 hours, can be turned off; or when you click) | GitHub API and release downloads | Nothing beyond the request |
+| Notchly Pro (only after you enter a key; at launch and every 12 hours) | [Polar](https://polar.sh) | The license key, its activation ID, and a device label with the Mac model (for example `Notchly on Mac15,3`) |
 
 AI usage is read from local Claude Code and Codex logs. Agent events arrive over a Unix socket that only your user can open.
 

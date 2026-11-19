@@ -147,6 +147,14 @@ private struct TopBarStatus: View {
 struct ModeContent: View {
     let mode: NotchMode
     var body: some View {
+        if Pro.modes.contains(mode) && !License.shared.isPro {
+            ProLockedView(title: mode.title)
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder private var content: some View {
         switch mode {
         case .nook: NookView()
         case .music: MusicView()

@@ -54,6 +54,12 @@ enum Snapshot {
         render("closed-activity", closed)
         LiveActivityCenter.shared.remove(.batteryVisualizer)
 
+        let locked = NotchModel(screenID: 0, notchSize: notch, hasPhysicalNotch: true)
+        locked.mode = .agents
+        locked.isOpen = true
+        render("open-agents-locked", locked)
+        License.shared.unlockedForSnapshots = true
+
         for mode in NotchMode.allCases {
             let m = NotchModel(screenID: 0, notchSize: notch, hasPhysicalNotch: true)
             m.mode = mode
