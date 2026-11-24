@@ -4,8 +4,12 @@ All notable changes to Notchly. Versions follow [semantic versioning](https://se
 
 ## Unreleased
 
+## 1.2.2 — 2026-11-24
+
 ### Fixed
 
+- An agent session you stop with Esc in Claude Code now shows **Stopped**. Before this fix it stayed on **Working**
+  until the next prompt, because Claude Code sends no hook when you interrupt it.
 - Updates no longer leave the downloaded zip (about 1.5 MB) in the temp folder; it is deleted after it is unpacked.
 
 ## 1.2.1 — 2026-11-02
