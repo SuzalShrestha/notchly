@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Model (same case names as NotchNook's AgentPhase / AgentStep.Kind / AgentStep.State)
 
-enum AgentPhase: String, Codable { case thinking, working, needsPermission, needsInput, done, idle
+enum AgentPhase: String, Codable { case thinking, working, needsPermission, needsInput, done, stopped, idle
     var needsAttention: Bool { self == .needsPermission || self == .needsInput }
     var isBusy: Bool { self == .thinking || self == .working }
 
@@ -13,6 +13,7 @@ enum AgentPhase: String, Codable { case thinking, working, needsPermission, need
         case .needsPermission: "Allow?"
         case .needsInput: "Needs input"
         case .done: "Done"
+        case .stopped: "Stopped"
         case .idle: "Idle"
         }
     }
@@ -22,7 +23,7 @@ enum AgentPhase: String, Codable { case thinking, working, needsPermission, need
         case .thinking, .working: Theme.claude
         case .needsPermission, .needsInput: Theme.warning
         case .done: Theme.success
-        case .idle: Theme.tertiaryText
+        case .stopped, .idle: Theme.tertiaryText
         }
     }
 }
@@ -192,10 +193,12 @@ struct HookEvent {
         case plan([AgentTodo])
         case planAdd(text: String, active: String)
         case planUpdate(id: String, status: AgentTodo.Status)
-        case stop, end, other
+        /// You pressed Esc: Claude Code sends no hook for it, Notchly reads it from the transcript.
+        case stop, interrupted, end, other
     }
     var sessionID: String
     var cwd: String
+    var transcriptPath = ""
     var toolUseID: String?
     var harness: Harness
     var kind: Kind
@@ -206,6 +209,7 @@ struct HookEvent {
         sessionID = sid
         cwd = o["cwd"] as? String ?? ""
         toolUseID = o["tool_use_id"] as? String
+        transcriptPath = o["transcript_path"] as? String ?? ""
         harness = Harness(payload: o, event: name)
         let tool = o["tool_name"] as? String ?? ""
         let input = o["tool_input"] as? [String: Any] ?? [:]
@@ -265,6 +269,9 @@ struct AgentSession: Identifiable, Equatable {
     var lastFailureAt: Date?
     /// The agent's own task list; it spans turns, as it does in the agent.
     var plan: [AgentTodo] = []
+    /// Claude Code's transcript and how far Notchly has read it, to see an Esc that sends no hook.
+    var transcript = ""
+    var transcriptOffset: UInt64 = 0
 
     var project: String { cwd.isEmpty ? harness.name : URL(fileURLWithPath: cwd).lastPathComponent }
     var visiblePlan: [AgentTodo] { plan.filter { $0.status != .deleted } }
@@ -316,6 +323,9 @@ struct AgentSession: Identifiable, Equatable {
         case .stop:
             phase = .done; message = ""
             for i in steps.indices where steps[i].state == .running { steps[i].state = .done; steps[i].endedAt = now }
+        case .interrupted:
+            phase = .stopped; message = ""
+            for i in steps.indices where steps[i].state == .running { steps[i].state = .failed; steps[i].endedAt = now }
         case .end, .other: break
         }
     }
@@ -398,12 +408,52 @@ final class AgentStore {
         var s = sessions[e.sessionID] ?? AgentSession(id: e.sessionID, cwd: e.cwd, harness: e.harness)
         let wasAttention = s.phase.needsAttention
         if !e.cwd.isEmpty { s.cwd = e.cwd }
+        if !e.transcriptPath.isEmpty, e.transcriptPath != s.transcript { s.transcript = e.transcriptPath; s.transcriptOffset = 0 }
+        // Everything up to here is before this event, so an old Esc there does not count.
+        s.transcriptOffset = Self.fileSize(s.transcript) ?? s.transcriptOffset
         s.apply(e.kind, toolUseID: e.toolUseID)
         sessions[e.sessionID] = s
         let set = AgentsFeature.settings.value
         if s.phase.needsAttention, !wasAttention, set.playsSound { NSSound(named: "Ping")?.play() }
         if e.kind == .stop, set.notifyFinished, !needsAttention { showFinished(s.project) }
         refreshActivities()
+    }
+
+    // MARK: Interrupts
+
+    nonisolated static let interruptMarker = Data("[Request interrupted by user".utf8)
+
+    nonisolated static func fileSize(_ path: String) -> UInt64? {
+        path.isEmpty ? nil : (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? UInt64
+    }
+
+    /// Esc in Claude Code fires no Stop hook; it writes a user entry "[Request interrupted by user…]".
+    /// ponytail: polls every 2 s while a session runs; a file watcher if that ever shows up in Instruments.
+    func checkInterrupts() {
+        for s in sessions.values where (s.phase.isBusy || s.phase.needsAttention) && !s.transcript.isEmpty {
+            guard let h = FileHandle(forReadingAtPath: s.transcript) else { continue }
+            defer { try? h.close() }
+            guard (try? h.seek(toOffset: s.transcriptOffset)) != nil, let data = try? h.readToEnd(), !data.isEmpty else { continue }
+            // Read only whole lines; a line Claude Code is still writing is read again next time.
+            guard let end = data.lastIndex(of: UInt8(ascii: "\n")) else { continue }
+            var next = s
+            next.transcriptOffset += UInt64(end - data.startIndex + 1)
+            if Self.isInterrupt(data[...end]) { next.apply(.interrupted, toolUseID: nil) }
+            sessions[s.id] = next
+            if next.phase == .stopped { refreshActivities() }
+        }
+    }
+
+    /// True if any whole JSONL line in `data` is Claude Code's own interrupt entry (not a tool result quoting it).
+    nonisolated static func isInterrupt(_ data: Data) -> Bool {
+        data.split(separator: UInt8(ascii: "\n")).contains { line in
+            guard line.range(of: interruptMarker) != nil,
+                  let o = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any], o["type"] as? String == "user",
+                  let content = (o["message"] as? [String: Any])?["content"] else { return false }
+            let blocks = content as? [[String: Any]] ?? []
+            let texts = (content as? String).map { [$0] } ?? blocks.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }
+            return texts.contains { $0.hasPrefix("[Request interrupted by user") }
+        }
     }
 
     func dismiss(_ id: String) {
@@ -728,6 +778,7 @@ enum AgentsFeature {
             DispatchQueue.main.async { MainActor.assumeIsolated { AgentStore.shared.receive(data) } }
         }
         MascotRoamer.shared.start()
+        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in MainActor.assumeIsolated { AgentStore.shared.checkInterrupts() } }
     }
 
     static func selfTest() {
@@ -845,6 +896,16 @@ enum AgentsFeature {
         proc.waitUntilExit()
         assert(proc.terminationStatus == 0 && HookEvent(json: received.data)?.sessionID == "e2e")
         unlink(sock)
+
+        // Esc: only Claude Code's own user entry counts, not a tool result or command that quotes it.
+        let esc = #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}"#
+        let quoted = #"{"type":"user","message":{"content":[{"type":"tool_result","content":"[Request interrupted by user]"}]}}"#
+        let said = #"{"type":"assistant","message":{"content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#
+        assert(AgentStore.isInterrupt(Data("{\"type\":\"mode\"}\n\(esc)\n".utf8)) && AgentStore.isInterrupt(Data(#"{"type":"user","message":{"content":"[Request interrupted by user]"}}"#.utf8)))
+        assert(!AgentStore.isInterrupt(Data("\(quoted)\n\(said)\n".utf8)) && !AgentStore.isInterrupt(Data()))
+        var cut = AgentSession(id: "x", cwd: "")
+        cut.apply(p.kind, toolUseID: nil); cut.apply(bash.kind, toolUseID: nil); cut.apply(.interrupted, toolUseID: nil)
+        assert(cut.phase == .stopped && !cut.phase.isBusy && cut.steps.allSatisfy { $0.state == .failed })
 
         AIUsageScanner.selfTest()
         PulseSampler.selfTest()

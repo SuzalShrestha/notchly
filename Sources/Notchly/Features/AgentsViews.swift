@@ -539,6 +539,7 @@ struct PhaseBadge: View {
             case .needsInput: Image(systemName: "text.bubble.fill")
             case .needsPermission: Image(systemName: "hand.raised.fill")
             case .done: Image(systemName: "checkmark")
+            case .stopped: Image(systemName: "stop.fill")
             case .idle: EmptyView()
             }
             Text(phase.label)
