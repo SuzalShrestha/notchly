@@ -20,6 +20,7 @@ enum Features {
         CalendarFeature.selfTest()
         AgentsFeature.selfTest()
         AppInfo.selfTest()
+        License.selfTest()
         print("selftest: ok")
     }
 }
@@ -119,6 +120,14 @@ struct NookView: View {
 struct NookWidgetView: View {
     let widget: NookWidget
     var body: some View {
+        if Pro.widgets.contains(widget) && !License.shared.isPro {
+            ProLockedView(title: widget.title, compact: true).cardSurface()
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder private var content: some View {
         switch widget {
         case .media: MediaWidget()
         case .calendar: CalendarWidget()

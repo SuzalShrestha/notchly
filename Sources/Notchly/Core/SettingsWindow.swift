@@ -3,12 +3,13 @@ import SwiftUI
 
 /// Settings sections (subset of NotchNookSettingsSection, same order).
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, nook, music, calendar, tray, clipboard, prompter, agents, liveActivities, shortcuts, about
+    case general, pro, nook, music, calendar, tray, clipboard, prompter, agents, liveActivities, shortcuts, about
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .general: "General"
+        case .pro: "Notchly Pro"
         case .nook: "Nook"
         case .music: "Music"
         case .calendar: "Calendar & Timers"
@@ -25,6 +26,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .general: "gearshape.fill"
+        case .pro: "star.fill"
         case .nook: "square.grid.2x2.fill"
         case .music: "music.note"
         case .calendar: "calendar"
@@ -41,6 +43,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var color: Color {
         switch self {
         case .general: .gray
+        case .pro: .orange
         case .nook: .indigo
         case .music: .pink
         case .calendar: .red
@@ -56,7 +59,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 }
 
 struct SettingsRootView: View {
-    @State private var section: SettingsSection = .general
+    /// Stored so other code can open a pane: AppDelegate.openSettings(_:).
+    @AppStorage("settingsSection") private var section: SettingsSection = .general
 
     var body: some View {
         NavigationSplitView {
@@ -82,6 +86,7 @@ struct SettingsRootView: View {
     @ViewBuilder private var pane: some View {
         switch section {
         case .general: GeneralPane()
+        case .pro: ProPane()
         case .nook: NookPane()
         case .music: MusicPane()
         case .calendar: CalendarPane()
@@ -289,7 +294,7 @@ private struct AboutPane: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Notchly").font(.system(size: 28, weight: .bold))
                     Text("Version \(AppInfo.version)").foregroundStyle(.secondary).textSelection(.enabled)
-                    Text("Free and open source under the MIT license. An independent project, not affiliated with NotchNook or lo.cafe.")
+                    Text("Free to use, with Notchly Pro for the Agents, Prompter, AI Usage and Pulse features. Source code under the MIT license. An independent project, not affiliated with NotchNook or lo.cafe.")
                         .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).padding(.top, 4)
                 }
             }

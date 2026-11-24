@@ -503,6 +503,7 @@ final class AgentStore {
     // when a wing has to appear or disappear (not on every tool call).
 
     private func showFinished(_ project: String) {
+        guard License.shared.isPro else { return }
         finishedProject = project
         showingAttention = false
         LiveActivityCenter.shared.show(LiveActivity(
@@ -514,7 +515,8 @@ final class AgentStore {
     func refreshActivities() {
         let set = AgentsFeature.settings.value
         let center = LiveActivityCenter.shared
-        let attention = set.notifyAttention && needsAttention
+        let pro = License.shared.isPro
+        let attention = pro && set.notifyAttention && needsAttention
         if attention, !showingAttention || center.activities[.agentAlert] == nil {
             center.show(LiveActivity(
                 kind: .agentAlert, priority: 90, leadingWidth: 26, trailingWidth: 76,
@@ -525,7 +527,7 @@ final class AgentStore {
         }
         showingAttention = attention
 
-        let busy = set.showWorkingActivity && isBusy
+        let busy = pro && set.showWorkingActivity && isBusy
         let shown = center.activities[.agentWorking] != nil
         if busy, !shown {
             center.show(LiveActivity(

@@ -400,7 +400,7 @@ final class MascotRoamer {
     private func tick() {
         let set = AgentsFeature.settings.value
         let sessions = Array(AgentStore.shared.sessions.values)
-        let active = set.enabled && set.showPet && set.roams ? Set(sessions.map(\.harness)) : []
+        let active = set.enabled && set.showPet && set.roams && License.shared.isPro ? Set(sessions.map(\.harness)) : []
         for (h, w) in walkers where !active.contains(h) { w.leave(); walkers[h] = nil }
         let now = Date()
         for (slot, h) in Harness.allCases.enumerated() where active.contains(h) {

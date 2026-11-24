@@ -4,6 +4,13 @@ All notable changes to Notchly. Versions follow [semantic versioning](https://se
 
 ## Unreleased
 
+### Added
+
+- **Notchly Pro.** Notchly stays free; a Pro license key unlocks the Agents tab (with mascots and agent live activities),
+  the Prompter tab, and the AI Usage and Pulse widgets. Polar sells the key (checkout, tax, receipts, subscriptions).
+  Enter it in Settings › Notchly Pro or the menu bar's **Notchly Pro…**. Locked tabs and widgets show an Upgrade button.
+  The key is checked with Polar at launch and every 12 hours, and keeps working offline for 14 days. Seller setup: PRO.md.
+
 ### Fixed
 
 - Updates no longer leave the downloaded zip (about 1.5 MB) in the temp folder; it is deleted after it is unpacked.
