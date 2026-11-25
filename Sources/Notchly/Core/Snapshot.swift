@@ -94,18 +94,25 @@ enum Snapshot {
         renderHosted("open-agents-focus", grid)
         AgentsFeature.settings.value.layout = layout
 
-        let moods: [(String, PetMood)] = [("sleeping", .sleeping), ("idle", .idle), ("thinking", .thinking), ("working-edit", .working(.edit)),
-                                          ("working-command", .working(.command)), ("alert", .alert), ("celebrating", .celebrating), ("oops", .oops)]
+        // Contact sheets: every mood for every mascot, and every act for Claude (posed mid-motion, not animated).
+        func tile(_ h: Harness, _ mood: PetMood, _ label: String, t: Double = 0.6, age: Double = 99) -> some View {
+            VStack(spacing: 4) {
+                Canvas { g, sz in PetPainter(mood: mood, sprite: .of(h), t: t, age: age).draw(&g, sz) }.frame(width: 110, height: 110)
+                Text(label).font(Theme.caption).foregroundStyle(.white).lineLimit(1)
+            }
+            .frame(width: 118)
+        }
+        let moods: [(String, PetMood)] = [("sleeping", .sleeping), ("idle", .idle), ("thinking", .thinking), ("reading", .working(.read)),
+                                          ("building", .working(.build)), ("alert", .alert), ("celebrating", .celebrating),
+                                          ("oops", .oops), ("stopped", .stopped)]
         save("pet-moods", VStack(alignment: .leading, spacing: 8) {
             ForEach(Harness.allCases, id: \.self) { h in
-                HStack(spacing: 8) {
-                    ForEach(moods.indices, id: \.self) { i in
-                        VStack(spacing: 4) {
-                            PetView(mood: moods[i].1, harness: h, size: 120, animated: false)
-                            Text("\(h.short) \(moods[i].0)").font(Theme.caption).foregroundStyle(.white)
-                        }
-                    }
-                }
+                HStack(spacing: 4) { ForEach(moods.indices, id: \.self) { i in tile(h, moods[i].1, "\(h.short) \(moods[i].0)") } }
+            }
+        }.padding(16).background(.black))
+        save("pet-acts", VStack(alignment: .leading, spacing: 8) {
+            ForEach([Array(PetAct.allCases.prefix(9)), Array(PetAct.allCases.dropFirst(9))], id: \.self) { row in
+                HStack(spacing: 4) { ForEach(row, id: \.self) { a in tile(.claude, .working(a), a.rawValue, t: 1.15) } }
             }
         }.padding(16).background(.black))
 
@@ -113,5 +120,49 @@ enum Snapshot {
             save("onboarding-\(page.rawValue + 1)", OnboardingView(page: page) { _ in })
         }
         print("snapshot: done")
+    }
+
+    /// `Notchly --pet-reel <dir>`: a storyboard of every mascot through each mood and act, one PNG per
+    /// frame at 30 fps, for an animator's frame-by-frame review (verify.sh encodes it with ffmpeg).
+    static func reel(to dir: String) {
+        let out = URL(fileURLWithPath: dir)
+        try? FileManager.default.removeItem(at: out)
+        try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        let story: [(String, PetMood, Double)] = [
+            ("sleeping", .sleeping, 1.6), ("wakes up, thinking", .thinking, 1.8), ("reading", .working(.read), 1.6),
+            ("editing", .working(.edit), 1.3), ("running a command", .working(.terminal), 1.3), ("building", .working(.build), 1.4),
+            ("running tests", .working(.test), 1.4), ("a step failed", .oops, 1.6), ("searching", .working(.search), 1.4),
+            ("researching", .working(.web), 1.4), ("asking a helper", .working(.helper), 1.4), ("installing", .working(.install), 1.4),
+            ("shipping", .working(.ship), 1.6), ("needs you", .alert, 2.0), ("you stopped it", .stopped, 2.0),
+            ("thinking again", .thinking, 1.0), ("done!", .celebrating, 2.4), ("idle", .idle, 3.0),
+        ]
+        let fps = 30.0
+        var frame = 0, start = 0.0
+        var previous: PetMood?
+        for (label, mood, length) in story {
+            for i in 0..<Int(length * fps) {
+                let age = Double(i) / fps, t = 1000 + start + age
+                let view = VStack(spacing: 6) {
+                    HStack(spacing: 0) {
+                        ForEach(Harness.allCases, id: \.self) { h in
+                            Canvas { g, sz in PetPainter(mood: mood, sprite: .of(h), t: t, from: previous, age: age).draw(&g, sz) }
+                                .frame(width: 150, height: 150)
+                        }
+                    }
+                    Text("\(label)  ·  \(String(format: "%.2f", start + age)) s").font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+                .frame(width: 900, height: 200).background(Color(hex: 0x0B0B0D))
+                let r = ImageRenderer(content: view.preferredColorScheme(.dark))
+                r.scale = 1
+                if let tiff = r.nsImage?.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                    try? png.write(to: out.appendingPathComponent(String(format: "f%04d.png", frame)))
+                }
+                frame += 1
+            }
+            start += length
+            previous = mood
+        }
+        print("reel: \(frame) frames")
     }
 }

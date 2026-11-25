@@ -36,8 +36,8 @@ private struct AgentsEmptyView: View {
             VStack(alignment: .leading, spacing: Space.m) {
                 Text("No agents running").font(Theme.title(17))
                 Text(store.hooksInstalled
-                     ? "Start Claude Code in any project and I'll follow along here: what it reads, edits and runs, and when it needs you."
-                     : "Connect Claude Code and I'll follow each session live: what it reads, edits and runs, and when it needs you.")
+                     ? "Start a coding agent in any project and I'll follow along here: what it reads, edits and runs, and when it needs you."
+                     : "Connect Claude Code and I'll follow each session live: what it reads, edits and runs, and when it needs you. Grok, Antigravity, Codex, Gemini and Droid connect in Settings → Agents.")
                     .font(Theme.body).foregroundStyle(Theme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 if store.hooksInstalled {
@@ -129,6 +129,7 @@ private struct AgentHeroCard: View {
         case .alert: return session.phase == .needsPermission ? "Waiting for your OK" : "Waiting for your reply"
         case .celebrating: return "Finished in \(AgentFormat.clock(session.elapsed(at: now)))"
         case .oops: return "A step went wrong; \(session.harness.short) is trying another way"
+        case .stopped: return "You stopped it. Ready when you are"
         case .idle: return total > 1 ? "\(total) sessions open" : "Ready for your next prompt"
         case .sleeping: return "Dozing until you're back"
         }
@@ -226,7 +227,7 @@ private struct SessionDetailCard: View {
                             .background(Color.white.opacity(0.06), in: Capsule())
                     }
                 }
-                Text(session.title.isEmpty ? "Waiting for a prompt" : session.title)
+                Text(session.title.isEmpty ? (session.phase.isBusy ? "Working on your request" : "Waiting for a prompt") : session.title)
                     .font(Theme.caption).foregroundStyle(Theme.secondaryText).lineLimit(1)
                     .help(session.prompt)
             }
@@ -588,13 +589,14 @@ struct AgentWingPet: View {
 struct AgentWorkingWingLabel: View {
     var body: some View {
         let busy = AgentStore.shared.sorted.first(where: \.phase.isBusy)
+        let act = busy?.runningStep.map(PetAct.init)
         HStack(spacing: 3) {
-            Image(systemName: busy?.runningStep?.kind.symbol ?? "sparkle").font(.system(size: 9, weight: .bold))
+            Image(systemName: act?.symbol ?? "sparkle").font(.system(size: 9, weight: .bold))
                 .contentTransition(.symbolEffect(.replace))
             Text("\(busy?.toolCount ?? 0)").monospacedDigit().contentTransition(.numericText())
         }
         .font(Theme.caption.weight(.semibold))
-        .foregroundStyle(busy?.runningStep?.kind.tint ?? Theme.claude)
+        .foregroundStyle(act?.tint ?? Theme.claude)
         .animation(Motion.snappy, value: busy?.toolCount)
     }
 }

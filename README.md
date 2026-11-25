@@ -34,7 +34,7 @@ colors) were measured from NotchNook's app and website; the [table below](#desig
 | Tray | 4 | Drop files on the notch; drag them out, AirDrop or share them later |
 | Prompter | 5 | A teleprompter right under the camera, with countdown and speed control |
 | Clipboard | 6 | Searchable history of text, links, colors, images and files, with favorites |
-| Agents | 7 | Each coding agent session live, in plain words: the agent's plan as a checklist, each step ("Reading index.html", "Running tests") with a check or spinner, files changed, and an alert when it needs you. A mascot for each agent (Claude Code, Codex, Gemini CLI) acts out what it is doing, walks on your windows and drops out of the notch to tell you when it needs you or finishes |
+| Agents | 7 | Each coding agent session live, in plain words: the agent's plan as a checklist, each step ("Reading index.html", "Running tests") with a check or spinner, files changed, and an alert when it needs you. A mascot for each agent (Claude Code, Codex, Gemini CLI, Grok Build, Antigravity, Factory Droid) acts out what it is doing, walks on your windows and drops out of the notch to tell you when it needs you or finishes |
 
 When the notch is closed it shows **live activities** beside the camera: the playing song, a running timer, an upcoming
 meeting, charging, an agent at work, a volume change, or the number of files in the tray.
@@ -63,14 +63,26 @@ From 1.2.0 on, Notchly updates itself: it checks GitHub at launch and every 6 ho
 
 ### Connect Claude Code
 
-The welcome tour, the empty Agents tab and Settings › Agents & AI Usage › **Install hooks** all do the same thing: it adds a small script to the `UserPromptSubmit`, `PreToolUse`,
+The welcome tour, the empty Agents tab and **Connect** on the Claude Code row in Settings › Agents & AI Usage all do the same thing: it adds a small script to the `UserPromptSubmit`, `PreToolUse`,
 `PostToolUse`, `Notification`, `Stop` and `SessionEnd` hooks in `~/.claude/settings.json`. Your other hooks stay; the first
 time, the old file is backed up as `settings.json.notchly-backup`. New Claude Code sessions then show up in the Agents tab.
-**Remove hooks** takes them out again.
+**Remove** takes them out again.
 
-Other agents: Notchly also reads Gemini CLI hook events and tells Codex sessions apart by their transcript path. It does
-not install hooks for them; point their hooks at the same script, `~/Library/Application Support/Notchly/notchly-hook.sh`.
-This path is not yet tested with real Gemini CLI or Codex sessions.
+### Connect other agents
+
+Settings › Agents & AI Usage has one row for each agent. **Connect** adds the same script to that agent's hook file and
+**Remove** takes it out; your other hooks stay, and a shared settings file is backed up once as `*.notchly-backup`.
+
+| Agent | Hook file |
+|---|---|
+| Grok Build | `~/.grok/hooks/notchly.json` (Notchly's own file) |
+| Antigravity | `~/.gemini/config/hooks.json` |
+| Codex | `~/.codex/hooks.json` |
+| Gemini CLI | `~/.gemini/settings.json` |
+| Factory Droid | `~/.factory/settings.json` |
+
+Grok and Antigravity payloads in the self-tests come from real `grok` 1.0.70 and `agy` 1.2.12 runs. The Codex, Gemini CLI
+and Factory Droid installs are not yet tested with real sessions.
 
 ## Privacy
 
@@ -170,7 +182,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the code layout and guidelines, and [
 | Weather (Open-Meteo) | yes | no air quality |
 | Timers / Pomodoro + live activities | yes | no focus music, no rain ambience |
 | Prompter: auto-scroll, speed, countdown, scripts | yes | no voice-follow mode |
-| Agents: Claude Code hook bridge (unix socket), sessions, plan checklist, plain-language steps, alert activity, roaming mascots per agent | yes | hooks install only on a button press (tour, empty Agents tab, Settings); no approve/answer from the notch; no hook install for Codex or Gemini CLI; mascots are click-through |
+| Agents: hook bridge for Claude Code, Grok, Antigravity, Codex, Gemini CLI, Droid (unix socket), sessions, plan checklist, plain-language steps, alert activity, roaming mascots per agent | yes | hooks install only on a button press (tour, empty Agents tab, Settings); no approve/answer from the notch; Codex, Gemini CLI and Droid hooks not tested with real sessions; mascots are click-through |
 | AI usage (local token scan of Claude Code + Codex logs) | yes | no provider quota APIs, no USD cost |
 | Battery live activity | yes | |
 | Pockets, Terminal, Lock-screen widgets, Messages, Downloads, Video downloader, Bluetooth/AirPods, Liquid Glass shader, Onboarding | no | not built yet |

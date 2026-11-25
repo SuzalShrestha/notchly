@@ -273,7 +273,7 @@ extension NookWidget {
 // MARK: - Pet showcase
 
 private struct PetShowcase: View {
-    private static let moods: [PetMood] = [.thinking, .working(.read), .working(.edit), .working(.command), .alert, .celebrating]
+    private static let moods: [PetMood] = [.thinking, .working(.read), .working(.build), .working(.test), .working(.web), .alert, .celebrating]
     @State private var pinned: PetMood?
 
     var body: some View {
