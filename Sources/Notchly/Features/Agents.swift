@@ -30,18 +30,22 @@ enum AgentPhase: String, Codable { case thinking, working, needsPermission, need
 
 struct AgentStep: Identifiable, Equatable {
     enum Kind: String, Codable, CaseIterable { case read, edit, write, command, search, web, task, question, other
-        /// Claude Code, Gemini CLI and Codex tool names.
+        /// Claude Code, Gemini CLI, Codex, Grok Build, Antigravity and Factory Droid tool names.
         init(tool: String) {
             switch tool {
-            case "Read", "NotebookRead", "read_file", "read_many_files": self = .read
-            case "Edit", "MultiEdit", "NotebookEdit", "replace", "apply_patch": self = .edit
-            case "Write", "write_file": self = .write
-            case "Bash", "BashOutput", "run_shell_command", "shell", "exec_command": self = .command
-            case "Grep", "Glob", "LS", "glob", "search_file_content", "list_directory": self = .search
-            case "WebFetch", "WebSearch", "google_web_search", "web_fetch": self = .web
-            case "Task", "Agent": self = .task
+            case "Read", "NotebookRead", "read_file", "read_many_files", "view_file", "view_file_outline", "view_code_item": self = .read
+            case "Edit", "MultiEdit", "NotebookEdit", "replace", "apply_patch", "ApplyPatch", "search_replace", "hashline_edit",
+                 "replace_file_content", "multi_replace_file_content": self = .edit
+            case "Write", "write_file", "write", "write_to_file", "Create": self = .write
+            case "Bash", "BashOutput", "run_shell_command", "shell", "exec_command", "run_terminal_command", "run_command",
+                 "send_command_input", "command_status", "Execute": self = .command
+            case "Grep", "Glob", "LS", "glob", "search_file_content", "list_directory", "grep", "list_dir", "grep_search",
+                 "find_by_name", "codebase_search": self = .search
+            case "WebFetch", "WebSearch", "google_web_search", "web_fetch", "web_search", "search_web", "read_url_content",
+                 "FetchUrl": self = .web
+            case "Task", "Agent", "spawn_subagent": self = .task
             case "AskUserQuestion": self = .question
-            default: self = .other
+            default: self = tool.hasPrefix("browser_") ? .web : .other
             }
         }
         var symbol: String {
@@ -49,14 +53,6 @@ struct AgentStep: Identifiable, Equatable {
             case .read: "doc.text"; case .edit: "pencil"; case .write: "square.and.pencil"; case .command: "terminal"
             case .search: "magnifyingglass"; case .web: "globe"; case .task: "person.2"; case .question: "questionmark.bubble"
             case .other: "wrench.and.screwdriver"
-            }
-        }
-        /// What the pet says it is doing.
-        var activity: String {
-            switch self {
-            case .read: "Reading files"; case .edit: "Editing code"; case .write: "Writing a file"
-            case .command: "Executing"; case .search: "Searching the code"; case .web: "Researching"
-            case .task: "Asking a helper"; case .question: "Has a question"; case .other: "Using a tool"
             }
         }
         /// One hue per kind, tuned to read on the black panel.
@@ -107,23 +103,25 @@ struct AgentStep: Identifiable, Equatable {
         }
     }
 
-    /// First rule whose pattern matches the command; `rtk git push` still reads as git.
-    private static let commandRules: [(String, String)] = [
-        ("Saving a checkpoint", #"\bgit (commit|add)\b"#),
-        ("Sharing changes", #"\bgit push\b|\bgh pr\b"#),
-        ("Checking the change history", #"\bgit\b"#),
-        ("Running tests", #"\b(test|tests|pytest|jest|vitest|rspec|selftest)\b"#),
-        ("Building the project", #"\b(build|make|tsc|xcodebuild|compile|cargo b)\b"#),
-        ("Installing packages", #"\b(install|npm i|pnpm add|yarn add|pip|brew|pod)\b"#),
-        ("Deleting files", #"\brm\b"#),
-        ("Downloading from the web", #"\b(curl|wget)\b"#),
-        ("Moving files", #"\b(mv|cp|mkdir)\b"#),
-        ("Looking through files", #"\b(ls|cat|find|grep|rg|head|tail|wc|sed|tree)\b"#),
+    /// First rule whose pattern matches the command; `rtk git push` still reads as git. The act is what the mascot plays.
+    private static let commandRules: [(String, String, PetAct)] = [
+        ("Saving a checkpoint", #"\bgit (commit|add)\b"#, .git),
+        ("Sharing changes", #"\bgit push\b|\bgh pr\b"#, .ship),
+        ("Checking the change history", #"\bgit\b"#, .git),
+        ("Running tests", #"\b(test|tests|pytest|jest|vitest|rspec|selftest)\b"#, .test),
+        ("Building the project", #"\b(build|make|tsc|xcodebuild|compile|cargo b)\b"#, .build),
+        ("Installing packages", #"\b(install|npm i|pnpm add|yarn add|pip|brew|pod)\b"#, .install),
+        ("Deleting files", #"\brm\b"#, .delete),
+        ("Downloading from the web", #"\b(curl|wget)\b"#, .download),
+        ("Moving files", #"\b(mv|cp|mkdir)\b"#, .terminal),
+        ("Looking through files", #"\b(ls|cat|find|grep|rg|head|tail|wc|sed|tree)\b"#, .search),
     ]
 
-    static func describe(command: String) -> String {
-        commandRules.first { command.range(of: $0.1, options: [.regularExpression, .caseInsensitive]) != nil }?.0 ?? "Running a command"
+    private static func rule(_ command: String) -> (String, String, PetAct)? {
+        commandRules.first { command.range(of: $0.1, options: [.regularExpression, .caseInsensitive]) != nil }
     }
+    static func describe(command: String) -> String { rule(command)?.0 ?? "Running a command" }
+    static func act(command: String) -> PetAct { rule(command)?.2 ?? .terminal }
 
     /// `mcp__github__create_issue` → "Using Github: create issue"; other tools by name.
     static func describe(tool: String, subject: String) -> String {
@@ -168,15 +166,36 @@ struct AgentTodo: Equatable {
 
 /// Which coding agent sent the events. Each one has its own mascot.
 enum Harness: String, Codable, CaseIterable {
-    case claude, codex, gemini
-    var name: String { switch self { case .claude: "Claude Code"; case .codex: "Codex"; case .gemini: "Gemini CLI" } }
-    var short: String { switch self { case .claude: "Claude"; case .codex: "Codex"; case .gemini: "Gemini" } }
-    var tint: Color { switch self { case .claude: Theme.claude; case .codex: Color(hex: 0xE6E6E6); case .gemini: Color(hex: 0x6E9BFF) } }
+    case claude, codex, gemini, grok, antigravity, droid
+    var name: String {
+        switch self {
+        case .claude: "Claude Code"; case .codex: "Codex"; case .gemini: "Gemini CLI"
+        case .grok: "Grok Build"; case .antigravity: "Antigravity"; case .droid: "Factory Droid"
+        }
+    }
+    var short: String {
+        switch self {
+        case .claude: "Claude"; case .codex: "Codex"; case .gemini: "Gemini"
+        case .grok: "Grok"; case .antigravity: "Antigravity"; case .droid: "Droid"
+        }
+    }
+    var tint: Color {
+        switch self {
+        case .claude: Theme.claude; case .codex: Color(hex: 0xE6E6E6); case .gemini: Color(hex: 0x6E9BFF)
+        case .grok: Color(hex: 0xB9B9C6); case .antigravity: Color(hex: 0x3FC1C9); case .droid: Color(hex: 0xFF8A3D)
+        }
+    }
 
-    /// Gemini CLI uses its own event names; every agent keeps transcripts in its own dot folder.
-    init(payload o: [String: Any], event: String) {
-        let transcript = o["transcript_path"] as? String ?? ""
-        if transcript.contains("/.gemini/") || ["BeforeTool", "AfterTool", "BeforeAgent", "AfterAgent"].contains(event) { self = .gemini }
+    /// `agent` is the name the hook script was given; otherwise the payload tells: Antigravity sends a
+    /// conversationId, Grok camelCase keys beside Claude's, Gemini its own event names, and every
+    /// agent keeps transcripts in its own dot folder.
+    init(payload o: [String: Any], event: String, agent: String? = nil) {
+        if let agent, let h = Harness(rawValue: agent) { self = h; return }
+        let transcript = (o["transcript_path"] ?? o["transcriptPath"]) as? String ?? ""
+        if o["conversationId"] != nil || transcript.contains("/.gemini/antigravity") { self = .antigravity }
+        else if transcript.contains("/.factory/") { self = .droid }
+        else if o["hookEventName"] != nil || transcript.contains("/.grok/") { self = .grok }
+        else if transcript.contains("/.gemini/") || ["BeforeTool", "AfterTool", "BeforeAgent", "AfterAgent"].contains(event) { self = .gemini }
         else if transcript.contains("/.codex/") { self = .codex }
         else { self = .claude }
     }
@@ -195,6 +214,8 @@ struct HookEvent {
         case planUpdate(id: String, status: AgentTodo.Status)
         /// You pressed Esc: Claude Code sends no hook for it, Notchly reads it from the transcript.
         case stop, interrupted, end, other
+        /// Antigravity calls the model again: the tools it ran are finished (it sends no PostToolUse).
+        case settle
     }
     var sessionID: String
     var cwd: String
@@ -203,21 +224,38 @@ struct HookEvent {
     var harness: Harness
     var kind: Kind
 
+    /// Claude-style snake_case payloads, Grok's camelCase beside them, and Antigravity's own
+    /// (`conversationId`, `toolCall`). Agents whose payload has no event name come wrapped by the hook
+    /// script: `{"notchly":{"agent":…,"event":…},"payload":{…}}`.
     init?(json data: Data) {
-        guard let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let name = o["hook_event_name"] as? String, let sid = o["session_id"] as? String else { return nil }
+        guard var o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        var agent: String?, event = ""
+        if let env = o["notchly"] as? [String: Any], let inner = o["payload"] as? [String: Any] {
+            agent = env["agent"] as? String; event = env["event"] as? String ?? ""; o = inner
+        }
+        func str(_ keys: String...) -> String? { keys.lazy.compactMap { o[$0] as? String }.first }
+        let call = o["toolCall"] as? [String: Any] ?? [:]
+        let name = event.isEmpty ? str("hook_event_name") ?? "" : event
+        // A subagent's own events (Grok) would show up as a separate session.
+        guard !name.isEmpty, let sid = str("session_id", "sessionId", "conversationId"), o["subagentType"] == nil else { return nil }
         sessionID = sid
-        cwd = o["cwd"] as? String ?? ""
-        toolUseID = o["tool_use_id"] as? String
-        transcriptPath = o["transcript_path"] as? String ?? ""
-        harness = Harness(payload: o, event: name)
-        let tool = o["tool_name"] as? String ?? ""
-        let input = o["tool_input"] as? [String: Any] ?? [:]
+        cwd = str("cwd") ?? (o["workspacePaths"] as? [String])?.first ?? ""
+        toolUseID = str("tool_use_id", "toolUseId") ?? call["id"] as? String
+        transcriptPath = str("transcript_path", "transcriptPath") ?? ""
+        harness = Harness(payload: o, event: name, agent: agent)
+        let tool = str("tool_name", "toolName") ?? call["name"] as? String ?? ""
+        let input = (o["tool_input"] ?? o["toolInput"] ?? call["args"]) as? [String: Any] ?? [:]
         func text(_ key: String) -> String { String((input[key] as? String ?? "").prefix(200)) }
         switch name {
         case "UserPromptSubmit", "BeforeAgent":
             let p = (o["prompt"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             kind = .prompt(String(p.prefix(600)))
+        case "PreInvocation":
+            // Antigravity: the first model call of a turn starts it.
+            let p = (o["lastUserInput"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            kind = (o["invocationNum"] as? Int ?? 0) == 0 ? .prompt(String(p.prefix(600))) : .settle
+        case "PostInvocation":
+            kind = .settle
         case "PreToolUse" where tool == "TodoWrite":
             let todos = (input["todos"] as? [[String: Any]] ?? []).prefix(50).enumerated().map { i, t in
                 AgentTodo(id: "\(i + 1)", text: String((t["content"] as? String ?? "").prefix(200)),
@@ -231,17 +269,27 @@ struct HookEvent {
             let id = input["taskId"] as? String ?? (input["taskId"] as? Int).map(String.init) ?? ""
             if let st = AgentTodo.Status(rawValue: text("status")) { kind = .planUpdate(id: id, status: st) } else { kind = .other }
         case "PreToolUse", "BeforeTool":
-            let raw = ["file_path", "absolute_path", "notebook_path", "command", "pattern", "url", "query", "description", "path", "skill", "prompt"]
+            let raw = ["file_path", "absolute_path", "target_file", "AbsolutePath", "TargetFile", "notebook_path", "command", "CommandLine",
+                       "pattern", "url", "Url", "query", "Query", "description", "path", "SearchPath", "DirectoryPath", "skill", "prompt"]
                 .lazy.compactMap { input[$0] as? String }.first ?? ""
             kind = .toolStart(AgentStep.Kind(tool: tool), tool: tool, subject: String(raw.split(separator: "\n").first ?? ""))
-        case "PostToolUse", "AfterTool":
-            let r = o["tool_response"] as? [String: Any]
-            kind = .toolEnd(tool: tool, failed: (r?["is_error"] as? Bool) == true || (r?["success"] as? Bool) == false)
+        case "PostToolUse", "AfterTool", "PostToolUseFailure":
+            let r = (o["tool_response"] ?? o["toolResult"]) as? [String: Any]
+            let failed = name == "PostToolUseFailure" || !(str("error") ?? "").isEmpty
+                || (r?["is_error"] as? Bool) == true || (r?["success"] as? Bool) == false
+            kind = .toolEnd(tool: tool, failed: failed)
         case "Notification":
             let msg = o["message"] as? String ?? ""
-            let type = o["notification_type"] as? String ?? ""
-            kind = .attention(msg, permission: type == "permission_prompt" || msg.localizedCaseInsensitiveContains("permission"))
-        case "Stop", "AfterAgent": kind = .stop
+            let type = str("notification_type", "notificationType") ?? ""
+            // Grok also tells hooks that a task finished; that is its Stop, not a request.
+            kind = type == "task_complete" ? .other
+                : .attention(msg, permission: type == "permission_prompt" || type == "ToolPermission" || msg.localizedCaseInsensitiveContains("permission"))
+        case "Stop", "AfterAgent":
+            // Grok sends one more Stop at shutdown, after SessionEnd; only `end_turn` ends a turn.
+            if harness == .grok, let reason = str("reason"), reason != "end_turn" { kind = .other }
+            else if !(str("error") ?? "").isEmpty { kind = .interrupted }   // Antigravity stopped on an error
+            else { kind = .stop }
+        case "StopCancelled", "StopFailure": kind = .interrupted   // Grok: you interrupted it, or the API failed
         case "SessionEnd": kind = .end
         default: kind = .other
         }
@@ -326,6 +374,11 @@ struct AgentSession: Identifiable, Equatable {
         case .interrupted:
             phase = .stopped; message = ""
             for i in steps.indices where steps[i].state == .running { steps[i].state = .failed; steps[i].endedAt = now }
+        case .settle:
+            // A model call with no turn running starts one (Antigravity may count calls across turns).
+            if !phase.isBusy && !phase.needsAttention { apply(.prompt(""), toolUseID: nil, at: now); return }
+            for i in steps.indices where steps[i].state == .running { steps[i].state = .done; steps[i].endedAt = now }
+            phase = .thinking; message = ""
         case .end, .other: break
         }
     }
@@ -376,7 +429,9 @@ final class AgentStore {
     var listening = false
     /// Session shown in the Focus layout; nil follows the one that needs you, else the newest.
     var selectedID: String?
-    private(set) var hooksInstalled = false
+    /// Agents whose hooks point at Notchly.
+    private(set) var installed: Set<Harness> = []
+    var hooksInstalled: Bool { !installed.isEmpty }
     private(set) var hookError: String?
     /// Project shown by the "finished" wing.
     private(set) var finishedProject = ""
@@ -430,7 +485,8 @@ final class AgentStore {
     /// Esc in Claude Code fires no Stop hook; it writes a user entry "[Request interrupted by user…]".
     /// ponytail: polls every 2 s while a session runs; a file watcher if that ever shows up in Instruments.
     func checkInterrupts() {
-        for s in sessions.values where (s.phase.isBusy || s.phase.needsAttention) && !s.transcript.isEmpty {
+        // Other agents send their own stop event (Grok: StopCancelled) and write other transcript formats.
+        for s in sessions.values where s.harness == .claude && (s.phase.isBusy || s.phase.needsAttention) && !s.transcript.isEmpty {
             guard let h = FileHandle(forReadingAtPath: s.transcript) else { continue }
             defer { try? h.close() }
             guard (try? h.seek(toOffset: s.transcriptOffset)) != nil, let data = try? h.readToEnd(), !data.isEmpty else { continue }
@@ -471,11 +527,12 @@ final class AgentStore {
     // MARK: Hooks
 
     func refreshHookStatus() {
-        hooksInstalled = (try? HookInstaller.isInstalled(HookInstaller.loadSettings())) ?? false
+        installed = Set(HookTarget.all.filter { (try? HookInstaller.isInstalled(HookInstaller.load($0), $0)) ?? false }.map(\.harness))
     }
 
-    func setHooks(installed add: Bool) {
-        do { try HookInstaller.apply(add: add); hookError = nil } catch { hookError = error.localizedDescription }
+    func setHooks(_ harness: Harness = .claude, installed add: Bool) {
+        guard let target = HookTarget.all.first(where: { $0.harness == harness }) else { return }
+        do { try HookInstaller.apply(add: add, target: target); hookError = nil } catch { hookError = "\(harness.name): \(error.localizedDescription)" }
         refreshHookStatus()
     }
 
@@ -489,10 +546,11 @@ final class AgentStore {
         if list.contains(where: \.phase.needsAttention) { return .alert }
         if let busy = list.filter(\.phase.isBusy).max(by: { $0.updatedAt < $1.updatedAt }) {
             if let f = busy.lastFailureAt, now.timeIntervalSince(f) < 3 { return .oops }
-            if busy.phase == .working, let step = busy.runningStep { return .working(step.kind) }
+            if busy.phase == .working, let step = busy.runningStep { return .working(PetAct(step)) }
             return .thinking
         }
         if list.contains(where: { $0.phase == .done && now.timeIntervalSince($0.updatedAt) < 6 }) { return .celebrating }
+        if list.contains(where: { $0.phase == .stopped && now.timeIntervalSince($0.updatedAt) < 6 }) { return .stopped }
         let latest = list.map(\.updatedAt).max() ?? .distantPast
         return now.timeIntervalSince(latest) > 180 ? .sleeping : .idle
     }
@@ -676,32 +734,112 @@ struct JSONObjectEnd {
     }
 }
 
-// MARK: - Hook installer (button press only; backs up settings.json first)
+// MARK: - Hook installer (button press only; backs up each settings file first)
+
+/// Where one agent reads its hooks, and which events Notchly listens to there.
+struct HookTarget {
+    let harness: Harness
+    /// Settings file, under the home folder.
+    let path: String
+    let events: [String]
+    /// Folders that show the agent is on this Mac.
+    let homes: [String]
+    /// Matcher for tool events; nil leaves it out (Codex and Grok then match every tool).
+    var matcher: String? = "*"
+    /// Passed to the hook script, which then wraps the payload with it; nil when the payload says who sent it.
+    var agent: String?
+    /// Antigravity: one named hook whose non-tool events take handlers directly, and no event name in the payload.
+    var named = false
+    /// Notchly's own file (Grok reads every file in its hooks folder): removed, not emptied.
+    var ownFile = false
+
+    static let toolEvents: Set = ["PreToolUse", "PostToolUse", "PostToolUseFailure", "BeforeTool", "AfterTool"]
+    private static let claudeEvents = ["UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop", "SessionEnd"]
+
+    static let claude = HookTarget(harness: .claude, path: ".claude/settings.json", events: claudeEvents, homes: [".claude"])
+    static let all: [HookTarget] = [
+        claude,
+        // Grok also runs ~/.claude/settings.json hooks; the same command in both places runs once.
+        HookTarget(harness: .grok, path: ".grok/hooks/notchly.json",
+                   events: ["UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Notification", "Stop",
+                            "StopCancelled", "StopFailure", "SessionEnd"],
+                   homes: [".grok"], matcher: nil, ownFile: true),
+        HookTarget(harness: .antigravity, path: ".gemini/config/hooks.json",
+                   events: ["PreInvocation", "PreToolUse", "PostToolUse", "PostInvocation", "Stop"],
+                   homes: [".gemini/antigravity-cli", ".gemini/antigravity", ".antigravity"], agent: "antigravity", named: true),
+        HookTarget(harness: .codex, path: ".codex/hooks.json", events: ["UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"],
+                   homes: [".codex"], matcher: nil, agent: "codex"),
+        HookTarget(harness: .gemini, path: ".gemini/settings.json",
+                   events: ["BeforeAgent", "BeforeTool", "AfterTool", "AfterAgent", "Notification", "SessionEnd"],
+                   homes: [".gemini/tmp", ".gemini/history"], agent: "gemini"),
+        HookTarget(harness: .droid, path: ".factory/settings.json", events: claudeEvents, homes: [".factory"], agent: "droid"),
+    ]
+
+    var url: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(path) }
+    var isPresent: Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return homes.contains { FileManager.default.fileExists(atPath: home.appendingPathComponent($0).path) }
+    }
+
+    /// The hook command for one event: the script, then the agent and (for Antigravity) the event name.
+    func command(_ event: String, script: String) -> String {
+        [script, agent, named ? event : nil].compactMap { $0 }.joined(separator: " ")
+    }
+}
 
 enum HookInstaller {
-    static let events = ["UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop", "SessionEnd"]
     static let marker = "notchly-hook.sh"
-    static var settingsURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/settings.json") }
+    static let namedKey = "notchly"
     static var scriptURL: URL { DataFile.folder.appendingPathComponent(marker) }
     static var command: String { shellQuoted(scriptURL.path) }
 
     /// One POSIX shell word: single quotes, with any `'` inside written as `'\''`.
     static func shellQuoted(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 
+    /// With arguments (agent, event) the payload goes out wrapped, for agents that do not name themselves
+    /// or the event; Antigravity reads a JSON reply, so that case prints `{}`.
     static func script(socket: String) -> String {
-        "#!/bin/sh\n# Notchly: forwards Claude Code hook events to the notch. Never blocks Claude.\n"
-            + "/usr/bin/nc -U -w 1 \(shellQuoted(socket)) >/dev/null 2>&1\nexit 0\n"
+        let nc = "/usr/bin/nc -U -w 1 \(shellQuoted(socket)) >/dev/null 2>&1"
+        return """
+        #!/bin/sh
+        # Notchly: forwards coding agent hook events to the notch. Never blocks the agent.
+        if [ -n "$1" ]; then
+          { printf '{"notchly":{"agent":"%s","event":"%s"},"payload":' "$1" "$2"; cat; printf '}'; } | \(nc)
+          [ -n "$2" ] && printf '{}\\n'
+        else
+          \(nc)
+        fi
+        exit 0
+
+        """
     }
 
+    /// Rewrites an installed script, so a new version of the script reaches hooks installed before it.
+    static func refreshScript() {
+        guard FileManager.default.fileExists(atPath: scriptURL.path) else { return }
+        try? script(socket: AgentBridgeServer.socketPath).write(to: scriptURL, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scriptURL.path)
+    }
+
+    private static func isOurs(_ handler: [String: Any]) -> Bool { (handler["command"] as? String)?.contains(marker) ?? false }
+
     /// Removes our entries from every event, then (if `add`) appends one group per event. nil = malformed hooks.
-    static func merged(_ root: [String: Any], add: Bool, command: String = HookInstaller.command) -> [String: Any]? {
+    static func merged(_ root: [String: Any], add: Bool, target t: HookTarget = .claude, command: String = HookInstaller.command) -> [String: Any]? {
         var root = root
+        if t.named {
+            guard root[namedKey] == nil || root[namedKey] is [String: Any] else { return nil }
+            root[namedKey] = add ? Dictionary(uniqueKeysWithValues: t.events.map { e -> (String, [[String: Any]]) in
+                let h: [String: Any] = ["type": "command", "command": t.command(e, script: command), "timeout": 5]
+                return (e, HookTarget.toolEvents.contains(e) ? [["matcher": "*", "hooks": [h]]] : [h])
+            }) : nil
+            return root
+        }
         guard var hooks = (root["hooks"] ?? [String: Any]()) as? [String: Any] else { return nil }
         for (event, value) in hooks {
             guard let groups = value as? [[String: Any]] else { return nil }
             let kept: [[String: Any]] = groups.compactMap { g in
                 guard let hs = g["hooks"] as? [[String: Any]] else { return g }
-                let rest = hs.filter { !(($0["command"] as? String)?.contains(marker) ?? false) }
+                let rest = hs.filter { !isOurs($0) }
                 if rest.count == hs.count { return g }
                 if rest.isEmpty { return nil }
                 var g = g; g["hooks"] = rest; return g
@@ -709,9 +847,9 @@ enum HookInstaller {
             hooks[event] = kept.isEmpty ? nil : kept
         }
         if add {
-            for e in events {
-                var g: [String: Any] = ["hooks": [["type": "command", "command": command, "timeout": 5]]]
-                if e == "PreToolUse" || e == "PostToolUse" { g["matcher"] = "*" }
+            for e in t.events {
+                var g: [String: Any] = ["hooks": [["type": "command", "command": t.command(e, script: command), "timeout": 5]]]
+                if HookTarget.toolEvents.contains(e), let m = t.matcher { g["matcher"] = m }
                 hooks[e] = (hooks[e] as? [[String: Any]] ?? []) + [g]
             }
         }
@@ -719,50 +857,54 @@ enum HookInstaller {
         return root
     }
 
-    static func isInstalled(_ root: [String: Any]) -> Bool {
+    static func isInstalled(_ root: [String: Any], _ t: HookTarget = .claude) -> Bool {
+        if t.named { return root[namedKey] is [String: Any] }
         guard let hooks = root["hooks"] as? [String: Any] else { return false }
-        return events.allSatisfy { e in
-            (hooks[e] as? [[String: Any]] ?? []).contains { g in
-                (g["hooks"] as? [[String: Any]] ?? []).contains { ($0["command"] as? String)?.contains(marker) ?? false }
-            }
+        return t.events.allSatisfy { e in
+            (hooks[e] as? [[String: Any]] ?? []).contains { g in (g["hooks"] as? [[String: Any]] ?? []).contains(where: isOurs) }
         }
     }
 
-    static func loadSettings() throws -> [String: Any] { try parse(try? Data(contentsOf: settingsURL)) }
+    static func load(_ t: HookTarget) throws -> [String: Any] { try parse(try? Data(contentsOf: t.url), name: t.url.lastPathComponent) }
 
-    private static func parse(_ data: Data?) throws -> [String: Any] {
+    private static func parse(_ data: Data?, name: String) throws -> [String: Any] {
         guard let data else { return [:] }
         guard let o = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw NSError(domain: "Notchly", code: 1, userInfo: [NSLocalizedDescriptionKey: "settings.json is not a JSON object"])
+            throw NSError(domain: "Notchly", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(name) is not a JSON object"])
         }
         return o
     }
 
-    static func apply(add: Bool) throws {
+    static func apply(add: Bool, target t: HookTarget) throws {
         let fm = FileManager.default
-        // Write through a symlinked settings.json (dotfile repos) instead of replacing the link with a file.
-        let target = settingsURL.resolvingSymlinksInPath()
-        let before = try? Data(contentsOf: target)
-        guard let root = merged(try parse(before), add: add) else {
-            throw NSError(domain: "Notchly", code: 2, userInfo: [NSLocalizedDescriptionKey: "settings.json has an unexpected \"hooks\" layout; not changed"])
+        let name = t.url.lastPathComponent
+        // Write through a symlinked settings file (dotfile repos) instead of replacing the link with a file.
+        let file = t.url.resolvingSymlinksInPath()
+        let before = try? Data(contentsOf: file)
+        guard let root = merged(try parse(before, name: name), add: add, target: t) else {
+            throw NSError(domain: "Notchly", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(name) has an unexpected hooks layout; not changed"])
         }
-        try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if t.ownFile, root.isEmpty {
+            if before != nil { try fm.removeItem(at: file) }
+            return
+        }
+        try fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         // The first backup is kept as is: it is the file from before Notchly ever touched it.
-        let backup = settingsURL.appendingPathExtension("notchly-backup")
-        if before != nil, !fm.fileExists(atPath: backup.path) { try fm.copyItem(at: target, to: backup) }
+        let backup = t.url.appendingPathExtension("notchly-backup")
+        if before != nil, !t.ownFile, !fm.fileExists(atPath: backup.path) { try fm.copyItem(at: file, to: backup) }
         if add {
             try script(socket: AgentBridgeServer.socketPath).write(to: scriptURL, atomically: true, encoding: .utf8)
             try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scriptURL.path)
         }
         let out = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-        // settings.json can hold API keys under "env": keep its mode (owner-only when new), not the umask default.
-        let mode = (try? fm.attributesOfItem(atPath: target.path))?[.posixPermissions] as? NSNumber ?? 0o600
-        // Claude Code may have saved the file since we read it; do not overwrite that change.
-        guard (try? Data(contentsOf: target)) == before else {
-            throw NSError(domain: "Notchly", code: 3, userInfo: [NSLocalizedDescriptionKey: "settings.json changed while updating; try again"])
+        // Settings files can hold API keys: keep the file's mode (owner-only when new), not the umask default.
+        let mode = (try? fm.attributesOfItem(atPath: file.path))?[.posixPermissions] as? NSNumber ?? 0o600
+        // The agent may have saved the file since we read it; do not overwrite that change.
+        guard (try? Data(contentsOf: file)) == before else {
+            throw NSError(domain: "Notchly", code: 3, userInfo: [NSLocalizedDescriptionKey: "\(name) changed while updating; try again"])
         }
-        try out.write(to: target, options: .atomic)
-        try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: target.path)
+        try out.write(to: file, options: .atomic)
+        try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: file.path)
     }
 }
 
@@ -773,6 +915,7 @@ enum AgentsFeature {
     static let settings = Setting("agentsSettings", default: AgentsSettings())
 
     static func start() {
+        HookInstaller.refreshScript()
         AgentStore.shared.refreshHookStatus()
         AgentStore.shared.listening = AgentBridgeServer.start(path: AgentBridgeServer.socketPath) { data in
             DispatchQueue.main.async { MainActor.assumeIsolated { AgentStore.shared.receive(data) } }
@@ -782,7 +925,10 @@ enum AgentsFeature {
     }
 
     static func selfTest() {
-        func ev(_ s: String) -> HookEvent { HookEvent(json: Data(s.utf8))! }
+        func ev(_ s: String, line: Int = #line) -> HookEvent {
+            guard let e = HookEvent(json: Data(s.utf8)) else { fatalError("line \(line): payload not parsed: \(s)") }
+            return e
+        }
         let p = ev(#"{"hook_event_name":"UserPromptSubmit","session_id":"s1","cwd":"/tmp/proj","prompt":"Fix the bug\nmore"}"#)
         assert(p.kind == .prompt("Fix the bug\nmore") && p.cwd == "/tmp/proj")
         let pre = ev(#"{"hook_event_name":"PreToolUse","session_id":"s1","tool_name":"Edit","tool_use_id":"u1","tool_input":{"file_path":"/a/b.swift","old_string":"x"}}"#)
@@ -805,7 +951,7 @@ enum AgentsFeature {
         for (i, e) in [p, pre, bash].enumerated() { s.apply(e.kind, toolUseID: e.toolUseID, at: t0 + Double(i)) }
         assert(s.phase == .working && s.steps.count == 2 && s.title == "Fix the bug" && s.prompt == "Fix the bug\nmore" && s.project == "proj")
         assert(s.turns == 1 && s.toolCount == 2 && s.kindCounts[.edit] == 1 && s.kindCounts[.command] == 1 && s.files == ["/a/b.swift"])
-        assert(AgentStore.mood([s], at: t0 + 3) == .working(.command))
+        assert(AgentStore.mood([s], at: t0 + 3) == .working(.build))
         s.apply(post.kind, toolUseID: post.toolUseID, at: t0 + 4)
         assert(s.steps[0].state == .done && s.steps[1].state == .running && s.currentLine == "Building the project")
         assert(s.steps[0].endedAt == t0 + 4 && s.steps[0].duration() == 3)
@@ -895,6 +1041,21 @@ enum AgentsFeature {
         assert(got.wait(timeout: .now() + 3) == .success)
         proc.waitUntilExit()
         assert(proc.terminationStatus == 0 && HookEvent(json: received.data)?.sessionID == "e2e")
+        // With agent and event arguments the script wraps the payload and answers Antigravity with `{}`.
+        let wrap = Process()
+        wrap.executableURL = URL(fileURLWithPath: "/bin/sh")
+        wrap.arguments = ["-c", HookInstaller.script(socket: sock), "sh", "antigravity", "Stop"]
+        let input = Pipe(), output = Pipe()
+        wrap.standardInput = input
+        wrap.standardOutput = output
+        try! wrap.run()
+        input.fileHandleForWriting.write(Data(#"{"conversationId":"e2e-ag","terminationReason":"NO_TOOL_CALL","error":""}"#.utf8) + Data("\n".utf8))
+        try! input.fileHandleForWriting.close()
+        assert(got.wait(timeout: .now() + 3) == .success)
+        wrap.waitUntilExit()
+        let wrapped = HookEvent(json: received.data)
+        assert(wrap.terminationStatus == 0 && wrapped?.sessionID == "e2e-ag" && wrapped?.harness == .antigravity && wrapped?.kind == .stop)
+        assert(String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) == "{}\n")
         unlink(sock)
 
         // Esc: only Claude Code's own user entry counts, not a tool result or command that quotes it.
@@ -906,6 +1067,76 @@ enum AgentsFeature {
         var cut = AgentSession(id: "x", cwd: "")
         cut.apply(p.kind, toolUseID: nil); cut.apply(bash.kind, toolUseID: nil); cut.apply(.interrupted, toolUseID: nil)
         assert(cut.phase == .stopped && !cut.phase.isBusy && cut.steps.allSatisfy { $0.state == .failed })
+        assert(AgentStore.mood([cut], at: Date()) == .stopped && AgentStore.mood([cut], at: Date() + 30) == .idle)
+
+        // Grok Build, from payloads it sent on 2026-11-24 (grok 1.0.70): camelCase keys beside Claude's.
+        let gp = ev(#"{"hookEventName":"user_prompt_submit","sessionId":"gk","cwd":"/p","workspaceRoot":"/p","prompt":"Read notes.txt","hook_event_name":"UserPromptSubmit","session_id":"gk"}"#)
+        assert(gp.harness == .grok && gp.kind == .prompt("Read notes.txt") && gp.cwd == "/p")
+        let gread = ev(#"{"hookEventName":"pre_tool_use","sessionId":"gk","cwd":"/p","toolName":"read_file","toolUseId":"c-0","toolInput":{"target_file":"/p/notes.txt"},"hook_event_name":"PreToolUse","session_id":"gk","tool_name":"read_file","tool_input":{"target_file":"/p/notes.txt"},"tool_use_id":"c-0"}"#)
+        assert(gread.kind == .toolStart(.read, tool: "read_file", subject: "/p/notes.txt") && gread.toolUseID == "c-0")
+        let gcmd = ev(#"{"hookEventName":"pre_tool_use","sessionId":"gk","toolName":"run_terminal_command","toolInput":{"command":"ls","description":"List files"},"hook_event_name":"PreToolUse"}"#)
+        assert(gcmd.kind == .toolStart(.command, tool: "run_terminal_command", subject: "ls") && gcmd.harness == .grok)
+        assert(ev(#"{"hookEventName":"stop","sessionId":"gk","reason":"end_turn","hook_event_name":"Stop","session_id":"gk"}"#).kind == .stop)
+        assert(ev(#"{"hookEventName":"stop","sessionId":"gk","reason":"shutdown","hook_event_name":"Stop","session_id":"gk"}"#).kind == .other)
+        assert(ev(#"{"hookEventName":"stop_cancelled","sessionId":"gk","hook_event_name":"StopCancelled"}"#).kind == .interrupted)
+        assert(ev(#"{"hookEventName":"notification","sessionId":"gk","notificationType":"task_complete","hook_event_name":"Notification"}"#).kind == .other)
+        assert(ev(#"{"hookEventName":"post_tool_use_failure","sessionId":"gk","toolName":"x","hook_event_name":"PostToolUseFailure"}"#).kind == .toolEnd(tool: "x", failed: true))
+        assert(HookEvent(json: Data(#"{"hookEventName":"stop","sessionId":"child","subagentType":"explore","hook_event_name":"Stop"}"#.utf8)) == nil)
+
+        // Antigravity CLI 1.2.12 sends no event name: the hook script wraps the payload with it.
+        func agy(_ event: String, _ body: String) -> HookEvent {
+            ev(#"{"notchly":{"agent":"antigravity","event":""# + event + #""},"payload":{"conversationId":"ag","workspacePaths":["/w"],"transcriptPath":"/u/.gemini/antigravity-cli/brain/ag/t.jsonl""# + body + "}}")
+        }
+        let a0 = agy("PreInvocation", #","invocationNum":0,"initialNumSteps":1"#)
+        assert(a0.harness == .antigravity && a0.sessionID == "ag" && a0.cwd == "/w" && a0.kind == .prompt(""))
+        let aview = agy("PreToolUse", #","stepIdx":2,"toolCall":{"id":"t1","name":"view_file","args":{"AbsolutePath":"/w/notes.txt","toolAction":"Viewing notes.txt"}}"#)
+        assert(aview.kind == .toolStart(.read, tool: "view_file", subject: "/w/notes.txt") && aview.toolUseID == "t1")
+        let arun = agy("PreToolUse", #","toolCall":{"name":"run_command","args":{"CommandLine":"npm test","Cwd":"/w"}}"#)
+        assert(arun.kind == .toolStart(.command, tool: "run_command", subject: "npm test"))
+        assert(agy("PostInvocation", #","invocationNum":1"#).kind == .settle && agy("PreInvocation", #","invocationNum":2"#).kind == .settle)
+        assert(agy("Stop", #","terminationReason":"NO_TOOL_CALL","error":"","fullyIdle":true"#).kind == .stop)
+        assert(agy("Stop", #","terminationReason":"error","error":"quota""#).kind == .interrupted)
+        assert(HookEvent(json: Data(#"{"conversationId":"ag","invocationNum":0}"#.utf8)) == nil)
+        var ag = AgentSession(id: "ag", cwd: "/w", harness: .antigravity)
+        for e in [a0, aview] { ag.apply(e.kind, toolUseID: e.toolUseID, at: t0) }
+        assert(ag.phase == .working && AgentStore.mood([ag], at: t0) == .working(.read))
+        ag.apply(.settle, toolUseID: nil, at: t0 + 1)
+        assert(ag.phase == .thinking && ag.steps.allSatisfy { $0.state == .done })
+        ag.apply(.stop, toolUseID: nil, at: t0 + 2); ag.apply(.settle, toolUseID: nil, at: t0 + 9)
+        assert(ag.phase == .thinking && ag.turns == 2 && ag.steps.isEmpty)
+        assert(ev(#"{"notchly":{"agent":"codex","event":""},"payload":{"hook_event_name":"Stop","session_id":"cx"}}"#).harness == .codex)
+        assert(ev(#"{"hook_event_name":"Stop","session_id":"d","transcript_path":"/u/.factory/sessions/d.jsonl","hookEventName":"Stop"}"#).harness == .droid)
+
+        // What the mascot acts out: command intent, MCP apps and plans.
+        assert(AgentStep.act(command: "npm test") == .test && AgentStep.act(command: "rtk git push") == .ship && AgentStep.act(command: "echo") == .terminal)
+        assert(PetAct(AgentStep(id: "", kind: .other, tool: "mcp__github__create_issue", subject: "")) == .connector)
+        assert(PetAct(AgentStep(id: "", kind: .other, tool: "linear__save_issue", subject: "")) == .connector)
+        assert(PetAct(AgentStep(id: "", kind: .other, tool: "EnterPlanMode", subject: "")) == .plan)
+        assert(PetAct(AgentStep(id: "", kind: .command, tool: "Bash", subject: "rm -rf dist")) == .delete)
+
+        // Motion: a hop crouches, stretches on the way up, peaks, and squashes on landing; noise repeats.
+        let crouch = PetPainter.hop(0.1, height: 0.1), rise = PetPainter.hop(0.3, height: 0.1)
+        let apex = PetPainter.hop(0.49, height: 0.1), land = PetPainter.hop(0.88, height: 0.1)
+        assert(crouch.lift == 0 && crouch.squash > 0 && rise.lift > 0 && rise.squash < 0)
+        assert(abs(apex.lift - 0.1) < 0.001 && land.lift == 0 && land.squash > 0 && PetPainter.hop(1, height: 0.1).squash < 0.001)
+        assert(PetPainter.noise(42, 3) == PetPainter.noise(42, 3) && (0..<1).contains(PetPainter.noise(-7)))
+        assert(abs(PetPainter.spring(3) - 1) < 0.01 && PetPainter.bounce(1) == 1 && PetPainter.bounce(0) == 0)
+
+        // Installers: Antigravity's named hook keeps other named hooks; per-agent commands and matchers.
+        let ant = HookTarget.all.first { $0.harness == .antigravity }!
+        let other: [String: Any] = ["lint": ["PostToolUse": [["matcher": "run_command", "hooks": [["command": "./lint.sh"]]]]]]
+        let withUs = HookInstaller.merged(other, add: true, target: ant, command: "'/x/notchly-hook.sh'")!
+        let ours = withUs["notchly"] as! [String: Any]
+        assert(HookInstaller.isInstalled(withUs, ant) && withUs["lint"] != nil && Set(ours.keys) == Set(ant.events))
+        assert(((ours["Stop"] as! [[String: Any]])[0]["command"] as! String) == "'/x/notchly-hook.sh' antigravity Stop")
+        assert(((ours["PreToolUse"] as! [[String: Any]])[0]["matcher"] as! String) == "*")
+        assert(NSDictionary(dictionary: HookInstaller.merged(withUs, add: false, target: ant)!).isEqual(to: other))
+        let grokT = HookTarget.all.first { $0.harness == .grok }!, codexT = HookTarget.all.first { $0.harness == .codex }!
+        let gk = (HookInstaller.merged([:], add: true, target: grokT, command: "'/x/notchly-hook.sh'")!["hooks"] as! [String: Any])
+        let gpre = (gk["PreToolUse"] as! [[String: Any]])[0]
+        assert(gpre["matcher"] == nil && ((gpre["hooks"] as! [[String: Any]])[0]["command"] as! String) == "'/x/notchly-hook.sh'")
+        let cx = (HookInstaller.merged([:], add: true, target: codexT, command: "'/x/notchly-hook.sh'")!["hooks"] as! [String: Any])
+        assert((((cx["Stop"] as! [[String: Any]])[0]["hooks"] as! [[String: Any]])[0]["command"] as! String) == "'/x/notchly-hook.sh' codex")
 
         AIUsageScanner.selfTest()
         PulseSampler.selfTest()
@@ -927,34 +1158,25 @@ struct AgentsPane: View {
                     }
                     .frame(width: 72, height: 72)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(store.hooksInstalled ? "Claude Code is connected" : "Connect Claude Code").font(.headline)
-                        Text(store.hooksInstalled
-                             ? "New sessions appear in the Agents tab. The pet in the notch shows what each one is doing."
-                             : "Notchly adds a small script to your Claude Code hooks so the notch can follow each session. Your other hooks stay, and the first time a backup is saved as settings.json.notchly-backup.")
+                        Text(store.hooksInstalled ? "Your agents are connected" : "Connect your coding agents").font(.headline)
+                        Text("Notchly adds a small script to each agent's hooks so the notch can follow every session. Your other hooks stay, and the first time a backup of the settings file is saved beside it (.notchly-backup).")
                             .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         if let error = store.hookError { Text(error).font(.caption).foregroundStyle(.red) }
-                        HStack {
-                            Button(store.hooksInstalled ? "Reinstall Hooks" : "Install Hooks") { store.setHooks(installed: true) }
-                                .buttonStyle(.borderedProminent).tint(Theme.claude)
-                            if store.hooksInstalled { Button("Remove Hooks") { store.setHooks(installed: false) } }
-                        }
-                        .padding(.top, 4)
                     }
                     Spacer(minLength: 0)
                 }
                 .padding(.vertical, 12)
             }
-            SettingsCard(title: "Status") {
-                SettingsRow(title: "Hooks", subtitle: store.hooksInstalled ? "Installed in ~/.claude/settings.json" : "Not installed") {
-                    Image(systemName: store.hooksInstalled ? "checkmark.circle.fill" : "circle.dashed")
-                        .foregroundStyle(store.hooksInstalled ? .green : .secondary)
+            SettingsCard(title: "Agents") {
+                ForEach(Array(HookTarget.all.enumerated()), id: \.offset) { i, t in
+                    if i > 0 { Divider() }
+                    AgentHookRow(target: t, installed: store.installed.contains(t.harness), showPet: s.value.showPet)
                 }
-                Divider()
+            }
+            SettingsCard(title: "Status") {
                 SettingsRow(title: "Notch bridge", subtitle: AgentBridgeServer.socketPath) {
                     Text(store.listening ? "Listening" : "Not running").foregroundStyle(.secondary)
                 }
-                Divider()
-                SettingsRow(title: "Events", subtitle: HookInstaller.events.joined(separator: ", ")) { EmptyView() }
             }
             SettingsCard(title: "Agents tab") {
                 SettingsRow(title: "Show agent sessions") { Toggle("", isOn: s.binding(\.enabled)).labelsHidden().toggleStyle(.switch) }
@@ -965,7 +1187,7 @@ struct AgentsPane: View {
                     }.labelsHidden().pickerStyle(.segmented).frame(width: 190)
                 }
                 Divider()
-                SettingsRow(title: "Mascots", subtitle: "One per agent (Claude, Codex, Gemini). It reacts as the agent thinks, works, needs you and finishes.") {
+                SettingsRow(title: "Mascots", subtitle: "One per agent. It acts out each step (reading, building, testing…) and reacts when the agent needs you, finishes or is stopped.") {
                     Toggle("", isOn: s.binding(\.showPet)).labelsHidden().toggleStyle(.switch)
                 }
                 Divider()
@@ -986,5 +1208,41 @@ struct AgentsPane: View {
             }
         }
         .onAppear { store.refreshHookStatus() }
+    }
+}
+
+/// One agent: its mascot, where its hooks live, and a button to connect or disconnect it.
+private struct AgentHookRow: View {
+    let target: HookTarget
+    let installed: Bool
+    let showPet: Bool
+
+    var body: some View {
+        let present = target.isPresent
+        SettingsRow(title: target.harness.name, subtitle: subtitle(present)) {
+            HStack(spacing: 8) {
+                if installed {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Button("Remove") { AgentStore.shared.setHooks(target.harness, installed: false) }
+                } else {
+                    Button("Connect") { AgentStore.shared.setHooks(target.harness, installed: true) }
+                        .tint(target.harness.tint)
+                        .disabled(!present)
+                }
+            }
+        }
+        .overlay(alignment: .leading) {
+            PetView(mood: installed ? .idle : .sleeping, harness: target.harness, size: 30, animated: showPet && installed)
+                .offset(x: -38)
+                .accessibilityHidden(true)
+        }
+        .padding(.leading, 38)
+    }
+
+    private func subtitle(_ present: Bool) -> String {
+        if installed { return "Connected in ~/\(target.path)" }
+        if !present { return "Not found on this Mac" }
+        if target.harness == .grok, AgentStore.shared.installed.contains(.claude) { return "Already follows Grok through Claude Code's hooks" }
+        return "Adds hooks to ~/\(target.path)"
     }
 }

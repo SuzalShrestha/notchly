@@ -4,6 +4,22 @@ All notable changes to Notchly. Versions follow [semantic versioning](https://se
 
 ## Unreleased
 
+### Added
+
+- **Grok Build, Antigravity and Factory Droid** sessions in the Agents tab, each with its own mascot. Settings › Agents &
+  AI Usage has a **Connect** button for each agent (also Codex and Gemini CLI).
+- **Mascots act out the work.** 18 kinds of work, each with its own prop: reading, editing, writing, terminal, tests,
+  build, git, push, install, delete, download, search, web, helper, question, plan, app connector and other tools.
+  Shell commands are sorted by what they do, so `npm test` shows the test act.
+- **Stopped mood:** the mascot skids to a stop when you interrupt the agent.
+
+### Changed
+
+- Mascot motion: crouch, stretch and squash on each hop, breathing, uneven blinks, eye movement, idle fidgets, and a
+  short reaction when the mood changes (wake-up yawn, startle, flinch, "got it", confetti).
+- Grok sessions that read the Claude Code hooks now show as Grok, not Claude, and a closed Grok session no longer
+  comes back as Done.
+
 ## 1.2.2 — 2026-11-24
 
 ### Fixed

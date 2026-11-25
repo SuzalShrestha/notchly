@@ -27,6 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
         if CommandLine.arguments.contains("--selftest") { Features.selfTest(); exit(0) }
+        if let i = CommandLine.arguments.firstIndex(of: "--pet-reel"), i + 1 < CommandLine.arguments.count {
+            Snapshot.reel(to: CommandLine.arguments[i + 1]); exit(0)
+        }
         if let i = CommandLine.arguments.firstIndex(of: "--snapshot"), i + 1 < CommandLine.arguments.count {
             Snapshot.run(to: CommandLine.arguments[i + 1]); exit(0)
         }
