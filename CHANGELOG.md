@@ -4,6 +4,8 @@ All notable changes to Notchly. Versions follow [semantic versioning](https://se
 
 ## Unreleased
 
+## 1.3.0 — 2026-11-25
+
 ### Added
 
 - **Grok Build, Antigravity and Factory Droid** sessions in the Agents tab, each with its own mascot. Settings › Agents &
